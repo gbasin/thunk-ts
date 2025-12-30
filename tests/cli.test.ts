@@ -53,7 +53,7 @@ describe("CLI", () => {
   it("init creates a session", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk");
+      const thunkDir = path.join(root, ".thunk-test");
 
       const result = runCli(["--thunk-dir", thunkDir, "init", "Add caching"], repoRoot);
 
@@ -67,7 +67,7 @@ describe("CLI", () => {
   it("list returns sessions", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk");
+      const thunkDir = path.join(root, ".thunk-test");
 
       runCli(["--thunk-dir", thunkDir, "init", "Feature 1"], repoRoot);
       runCli(["--thunk-dir", thunkDir, "init", "Feature 2"], repoRoot);
@@ -81,7 +81,7 @@ describe("CLI", () => {
   it("status returns session data", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk");
+      const thunkDir = path.join(root, ".thunk-test");
 
       const init = runCli(["--thunk-dir", thunkDir, "init", "Test feature"], repoRoot);
       const sessionId = JSON.parse(init.stdout).session_id as string;
@@ -96,7 +96,7 @@ describe("CLI", () => {
   it("clean removes sessions", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk");
+      const thunkDir = path.join(root, ".thunk-test");
 
       const init = runCli(["--thunk-dir", thunkDir, "init", "Test feature"], repoRoot);
       const sessionId = JSON.parse(init.stdout).session_id as string;
@@ -113,7 +113,7 @@ describe("CLI", () => {
   it("pretty output uses indentation", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk");
+      const thunkDir = path.join(root, ".thunk-test");
 
       const result = runCli(
         ["--thunk-dir", thunkDir, "--pretty", "init", "Test feature"],
@@ -128,7 +128,7 @@ describe("CLI", () => {
   it("approve and continue require user_review", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk");
+      const thunkDir = path.join(root, ".thunk-test");
 
       const init = runCli(["--thunk-dir", thunkDir, "init", "Test feature"], repoRoot);
       const sessionId = JSON.parse(init.stdout).session_id as string;
@@ -147,7 +147,7 @@ describe("CLI", () => {
   it("wait returns user_review details", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk");
+      const thunkDir = path.join(root, ".thunk-test");
       const manager = new SessionManager(thunkDir);
       const state = await manager.createSession("Test feature");
       state.phase = Phase.UserReview;
@@ -166,7 +166,7 @@ describe("CLI", () => {
   it("wait returns approved details", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk");
+      const thunkDir = path.join(root, ".thunk-test");
       const manager = new SessionManager(thunkDir);
       const state = await manager.createSession("Test feature");
       state.phase = Phase.Approved;
@@ -185,7 +185,7 @@ describe("CLI", () => {
   it("wait runs a drafting turn", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk");
+      const thunkDir = path.join(root, ".thunk-test");
       const binDir = path.join(root, "bin");
       await fs.mkdir(binDir, { recursive: true });
 
@@ -226,7 +226,7 @@ for (const line of lines) {
   it("approve creates a plan symlink", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk");
+      const thunkDir = path.join(root, ".thunk-test");
       const manager = new SessionManager(thunkDir);
       const state = await manager.createSession("Test feature");
       state.phase = Phase.UserReview;
@@ -255,7 +255,7 @@ for (const line of lines) {
   it("diff errors when turn < 2", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk");
+      const thunkDir = path.join(root, ".thunk-test");
 
       const init = runCli(["--thunk-dir", thunkDir, "init", "Test feature"], repoRoot);
       const sessionId = JSON.parse(init.stdout).session_id as string;
@@ -270,7 +270,7 @@ for (const line of lines) {
   it("diff errors when files are missing", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk");
+      const thunkDir = path.join(root, ".thunk-test");
       const manager = new SessionManager(thunkDir);
       const state = await manager.createSession("Test feature");
       state.turn = 2;

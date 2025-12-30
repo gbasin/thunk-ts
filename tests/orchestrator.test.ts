@@ -60,7 +60,7 @@ for (const line of lines) {
       );
 
       await withPatchedPath(binDir, async () => {
-        const manager = new SessionManager(path.join(root, ".thunk"));
+        const manager = new SessionManager(path.join(root, ".thunk-test"));
         const state = await manager.createSession("Test task");
         state.phase = Phase.Drafting;
         await manager.saveState(state);
@@ -83,7 +83,7 @@ for (const line of lines) {
 
   it("returns diffs between turns", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk"));
+      const manager = new SessionManager(path.join(root, ".thunk-test"));
       const state = await manager.createSession("Test task");
       const paths = manager.getPaths(state.sessionId);
 
@@ -104,7 +104,7 @@ for (const line of lines) {
 
   it("generates user feedback diff when snapshots exist", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk"));
+      const manager = new SessionManager(path.join(root, ".thunk-test"));
       const state = await manager.createSession("Test task");
       const paths = manager.getPaths(state.sessionId);
 
@@ -144,7 +144,7 @@ process.exit(1);
       );
 
       await withPatchedPath(binDir, async () => {
-        const manager = new SessionManager(path.join(root, ".thunk"));
+        const manager = new SessionManager(path.join(root, ".thunk-test"));
         const state = await manager.createSession("Test task");
         const paths = manager.getPaths(state.sessionId);
 
@@ -174,7 +174,7 @@ process.exit(1);
 
   it("returns the single agent plan without synthesis", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk"));
+      const manager = new SessionManager(path.join(root, ".thunk-test"));
       const state = await manager.createSession("Test task");
       const paths = manager.getPaths(state.sessionId);
 

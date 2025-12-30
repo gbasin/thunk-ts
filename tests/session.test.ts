@@ -18,7 +18,7 @@ async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
 describe("SessionManager", () => {
   it("creates and loads a session", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk"));
+      const manager = new SessionManager(path.join(root, ".thunk-test"));
       const state = await manager.createSession("Add caching layer");
 
       expect(state.sessionId).toContain("-");
@@ -34,7 +34,7 @@ describe("SessionManager", () => {
 
   it("lists sessions", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk"));
+      const manager = new SessionManager(path.join(root, ".thunk-test"));
       await manager.createSession("Task 1");
       await manager.createSession("Task 2");
 
@@ -47,7 +47,7 @@ describe("SessionManager", () => {
 
   it("saves state changes", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk"));
+      const manager = new SessionManager(path.join(root, ".thunk-test"));
       const state = await manager.createSession("Test task");
       state.turn = 2;
       state.phase = Phase.UserReview;
@@ -61,7 +61,7 @@ describe("SessionManager", () => {
 
   it("cleans sessions", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk"));
+      const manager = new SessionManager(path.join(root, ".thunk-test"));
       const state = await manager.createSession("Test task");
 
       const cleaned = await manager.cleanSession(state.sessionId);
@@ -74,7 +74,7 @@ describe("SessionManager", () => {
 
   it("returns null for missing session", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk"));
+      const manager = new SessionManager(path.join(root, ".thunk-test"));
       const loaded = await manager.loadSession("missing-session");
       expect(loaded).toBeNull();
     });
@@ -82,7 +82,7 @@ describe("SessionManager", () => {
 
   it("returns false when cleaning missing session", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk"));
+      const manager = new SessionManager(path.join(root, ".thunk-test"));
       const cleaned = await manager.cleanSession("missing-session");
       expect(cleaned).toBe(false);
     });
@@ -90,7 +90,7 @@ describe("SessionManager", () => {
 
   it("detects unanswered questions", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk"));
+      const manager = new SessionManager(path.join(root, ".thunk-test"));
       const state = await manager.createSession("Test task");
       const paths = manager.getPaths(state.sessionId);
 
@@ -107,7 +107,7 @@ describe("SessionManager", () => {
 
   it("allows approval when questions answered", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk"));
+      const manager = new SessionManager(path.join(root, ".thunk-test"));
       const state = await manager.createSession("Test task");
       const paths = manager.getPaths(state.sessionId);
 
@@ -124,7 +124,7 @@ describe("SessionManager", () => {
 
   it("treats next-line answers as answered", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk"));
+      const manager = new SessionManager(path.join(root, ".thunk-test"));
       const state = await manager.createSession("Test task");
       const paths = manager.getPaths(state.sessionId);
 
