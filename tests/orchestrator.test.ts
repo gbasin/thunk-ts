@@ -32,6 +32,29 @@ async function withPatchedPath(binDir: string, fn: () => Promise<void>) {
   }
 }
 
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForFiles(files: string[], timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const states = await Promise.all(files.map((file) => fileExists(file)));
+    if (states.every(Boolean)) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  const states = await Promise.all(files.map((file) => fileExists(file)));
+  const missing = files.filter((_, index) => !states[index]);
+  throw new Error(`Timed out waiting for files: ${missing.join(", ")}`);
+}
+
 describe("TurnOrchestrator", () => {
   it("runs a turn and writes outputs", async () => {
     await withTempDir(async (root) => {
@@ -77,6 +100,106 @@ for (const line of lines) {
         const snapshotFile = turnFile.replace(/\.md$/, ".snapshot.md");
         expect(await fs.readFile(turnFile, "utf8")).toContain("# Plan");
         expect(await fs.readFile(snapshotFile, "utf8")).toContain("# Plan");
+      });
+    });
+  });
+
+  it("runs drafting agents in parallel", async () => {
+    await withTempDir(async (root) => {
+      const binDir = path.join(root, "bin");
+      await fs.mkdir(binDir, { recursive: true });
+
+      const signals = {
+        claudeStarted: path.join(root, "claude.started"),
+        codexStarted: path.join(root, "codex.started"),
+        release: path.join(root, "release"),
+      };
+
+      await writeExecutable(
+        path.join(binDir, "claude"),
+        `#!/usr/bin/env bun
+import { promises as fs } from "fs";
+
+const started = ${JSON.stringify(signals.claudeStarted)};
+const release = ${JSON.stringify(signals.release)};
+const deadline = Date.now() + 5000;
+
+await fs.writeFile(started, "started", "utf8");
+
+while (true) {
+  try {
+    await fs.access(release);
+    break;
+  } catch {}
+  if (Date.now() > deadline) {
+    console.error("release timeout");
+    process.exit(1);
+  }
+  await new Promise((resolve) => setTimeout(resolve, 10));
+}
+
+const payload = JSON.stringify({ session_id: "sess-1", result: "# Plan from Claude" });
+process.stdout.write(payload);
+`,
+      );
+
+      await writeExecutable(
+        path.join(binDir, "codex"),
+        `#!/usr/bin/env bun
+import { promises as fs } from "fs";
+
+const started = ${JSON.stringify(signals.codexStarted)};
+const release = ${JSON.stringify(signals.release)};
+const deadline = Date.now() + 5000;
+
+await fs.writeFile(started, "started", "utf8");
+
+while (true) {
+  try {
+    await fs.access(release);
+    break;
+  } catch {}
+  if (Date.now() > deadline) {
+    console.error("release timeout");
+    process.exit(1);
+  }
+  await new Promise((resolve) => setTimeout(resolve, 10));
+}
+
+const lines = [
+  JSON.stringify({ type: "thread.started", thread_id: "thread-1" }),
+  JSON.stringify({ type: "item.message", role: "assistant", content: "# Plan from Codex" }),
+];
+for (const line of lines) {
+  process.stdout.write(line + "\\n");
+}
+`,
+      );
+
+      await withPatchedPath(binDir, async () => {
+        const manager = new SessionManager(path.join(root, ".thunk-test"));
+        const state = await manager.createSession("Test task");
+        state.phase = Phase.Drafting;
+        await manager.saveState(state);
+
+        const orchestrator = new TurnOrchestrator(manager, ThunkConfig.default());
+        const runPromise = orchestrator.runTurn(state.sessionId);
+
+        let waitError: unknown;
+        try {
+          await waitForFiles([signals.claudeStarted, signals.codexStarted], 3000);
+        } catch (error) {
+          waitError = error;
+        }
+
+        await fs.writeFile(signals.release, "go", "utf8");
+        const success = await runPromise;
+
+        if (waitError) {
+          throw waitError;
+        }
+
+        expect(success).toBe(true);
       });
     });
   });

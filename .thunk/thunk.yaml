@@ -72,8 +72,8 @@ agents:
     enabled: true
   - id: codex
     type: codex
-    model: codex-5.2
-    thinking: xmax
+    model: gpt-5.2-codex
+    thinking: xhigh
     enabled: true
 synthesizer:
   id: synthesizer

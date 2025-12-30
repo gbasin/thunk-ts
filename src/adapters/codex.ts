@@ -99,7 +99,7 @@ function buildCmd(
     cmd.push("--model", config.model);
   }
   if (config.thinking) {
-    cmd.push("--thinking", config.thinking);
+    cmd.push("-c", `model_reasoning_effort=${config.thinking}`);
   }
   if (codexConfigPath) {
     cmd.push("--config", codexConfigPath);
@@ -107,8 +107,10 @@ function buildCmd(
 
   const codexConfig = config.codex;
 
+  // --search only works in interactive TUI mode
+  // For headless exec, use --enable web_search_request
   if (codexConfig?.search) {
-    cmd.push("--search");
+    cmd.push("--enable", "web_search_request");
   }
 
   if (codexConfig?.dangerouslyBypass) {

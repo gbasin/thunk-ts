@@ -49,6 +49,7 @@ export interface AgentConfig {
 
 export type AgentStatusMap = Record<string, AgentStatus>;
 export type AgentPlanIdMap = Record<string, string>;
+export type AgentErrorMap = Record<string, string>;
 
 type ThunkConfigParams = {
   agents: AgentConfig[];
@@ -392,6 +393,7 @@ export class SessionState {
   updatedAt: Date;
   agents: AgentStatusMap;
   agentPlanIds: AgentPlanIdMap;
+  agentErrors: AgentErrorMap;
 
   constructor(params: {
     sessionId: string;
@@ -402,6 +404,7 @@ export class SessionState {
     updatedAt: Date;
     agents?: AgentStatusMap;
     agentPlanIds?: AgentPlanIdMap;
+    agentErrors?: AgentErrorMap;
   }) {
     this.sessionId = params.sessionId;
     this.task = params.task;
@@ -411,10 +414,11 @@ export class SessionState {
     this.updatedAt = params.updatedAt;
     this.agents = params.agents ?? {};
     this.agentPlanIds = params.agentPlanIds ?? {};
+    this.agentErrors = params.agentErrors ?? {};
   }
 
   toDict(): Record<string, unknown> {
-    return {
+    const dict: Record<string, unknown> = {
       session_id: this.sessionId,
       task: this.task,
       turn: this.turn,
@@ -424,6 +428,10 @@ export class SessionState {
       agents: Object.fromEntries(Object.entries(this.agents).map(([key, value]) => [key, value])),
       agent_plan_ids: this.agentPlanIds,
     };
+    if (Object.keys(this.agentErrors).length > 0) {
+      dict.agent_errors = this.agentErrors;
+    }
+    return dict;
   }
 }
 

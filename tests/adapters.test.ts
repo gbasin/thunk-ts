@@ -383,7 +383,8 @@ describe("Adapters", () => {
 
       expect(commands.length).toBe(2);
       expect(commands[0]).toContain("--add-dir");
-      expect(commands[0]).toContain("--search");
+      expect(commands[0]).toContain("--enable");
+      expect(commands[0]).toContain("web_search_request");
       expect(commands[0]).toContain("--sandbox");
       expect(commands[0]).toContain("read-only");
       expect(commands[0]).toContain("--ask-for-approval");
@@ -391,13 +392,14 @@ describe("Adapters", () => {
       expect(commands[0]).toContain("extra-dir");
       expect(commands[0]).toContain("--model");
       expect(commands[0]).toContain("codex-5.2");
-      expect(commands[0]).toContain("--thinking");
-      expect(commands[0]).toContain("xmax");
+      expect(commands[0]).toContain("-c");
+      expect(commands[0]).toContain("model_reasoning_effort=xmax");
       expect(commands[0]).not.toContain("--full-auto");
       expect(commands[0]).toContain("resume");
       expect(commands[0]).toContain("thread-123");
       expect(commands[1]).toContain("--add-dir");
-      expect(commands[1]).toContain("--search");
+      expect(commands[1]).toContain("--enable");
+      expect(commands[1]).toContain("web_search_request");
       expect(commands[1]).toContain("--sandbox");
       expect(commands[1]).toContain("read-only");
       expect(commands[1]).toContain("--ask-for-approval");
@@ -405,8 +407,8 @@ describe("Adapters", () => {
       expect(commands[1]).toContain("extra-dir");
       expect(commands[1]).toContain("--model");
       expect(commands[1]).toContain("codex-5.2");
-      expect(commands[1]).toContain("--thinking");
-      expect(commands[1]).toContain("xmax");
+      expect(commands[1]).toContain("-c");
+      expect(commands[1]).toContain("model_reasoning_effort=xmax");
       expect(commands[1]).not.toContain("--full-auto");
       expect(commands[1]).toContain("resume");
       expect(commands[1]).toContain("thread-123");

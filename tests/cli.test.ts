@@ -151,6 +151,7 @@ describe("CLI", () => {
       const manager = new SessionManager(thunkDir);
       const state = await manager.createSession("Test feature");
       state.phase = Phase.UserReview;
+      state.agentErrors = { codex: "error: draft failed" };
       await manager.saveState(state);
 
       const result = runCli(
@@ -160,6 +161,7 @@ describe("CLI", () => {
       const data = JSON.parse(result.stdout);
       expect(data.phase).toBe(Phase.UserReview);
       expect(data.file).toBe(manager.getPaths(state.sessionId).turnFile(state.turn));
+      expect(data.agent_errors).toEqual({ codex: "error: draft failed" });
     });
   });
 
@@ -200,13 +202,8 @@ process.stdout.write(payload);
       await writeExecutable(
         path.join(binDir, "codex"),
         `#!/usr/bin/env bun
-const lines = [
-  JSON.stringify({ type: "thread.started", thread_id: "thread-1" }),
-  JSON.stringify({ type: "item.message", role: "assistant", content: "# Plan from Codex" })
-];
-for (const line of lines) {
-  process.stdout.write(line + "\\n");
-}
+process.stderr.write("error: codex failed");
+process.exit(1);
 `,
       );
 
@@ -218,6 +215,7 @@ for (const line of lines) {
         const data = JSON.parse(result.stdout);
 
         expect(data.phase).toBe(Phase.UserReview);
+        expect(data.agent_errors).toEqual({ codex: "error: codex failed" });
         expect(await fs.readFile(data.file, "utf8")).toContain("# Plan");
       });
     });

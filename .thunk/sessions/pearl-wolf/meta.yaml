@@ -1,0 +1,579 @@
+session_id: pearl-wolf
+task: >-
+  # Web Editor Specification
+
+
+  A browser-based markdown editor for thunk planning sessions, accessible via
+  URL from any device on the local network.
+
+
+  ## Overview
+
+
+  Users currently edit turn files (`001.md`, etc.) in their local text editor.
+  This feature adds a web-based Monaco editor that:
+
+  - Auto-starts when `thunk wait` completes
+
+  - Provides a URL (copied to clipboard) for immediate editing
+
+  - Supports local network access (edit from iPhone via tmux/Blink)
+
+  - Auto-saves drafts and commits on explicit save
+
+
+  ## Architecture
+
+
+  ### Server Lifecycle
+
+
+  **Hybrid model: lazy start, long timeout**
+
+  - Server starts automatically when `thunk wait` completes (if not already
+  running)
+
+  - Runs as a forked/detached daemon process
+
+  - Shuts down after 24 hours of inactivity OR when no sessions are in editable
+  state
+
+  - Activity = save operations (not page loads)
+
+  - Checks for pending sessions on each HTTP request + hourly poll
+
+
+  ### Daemon State
+
+
+  Stored in `.thunk/server.json`:
+
+  ```json
+
+  {
+    "pid": 12345,
+    "port": 3456,
+    "started_at": "2024-01-15T10:30:00Z"
+  }
+
+  ```
+
+
+  Global authentication token stored in `.thunk/token` (generated once,
+  persisted).
+
+
+  ### Process Management
+
+
+  - Server forks and detaches from parent process
+
+  - Logs to `.thunk/server.log` (not stdout)
+
+  - Walks up directory tree to find `.thunk` (like git finds `.git`)
+
+  - Stores PID in `server.json` for discovery by subsequent `thunk` commands
+
+
+  ## Network & Security
+
+
+  ### Binding
+
+
+  - Binds to `0.0.0.0` for local network access
+
+  - Default port 3456, auto-increment if in use (3457, 3458...)
+
+  - HTTP only (no HTTPS)
+
+
+  ### IP Detection
+
+
+  - Auto-detect primary network interface IP (prefer en0/eth0)
+
+  - Filter out Docker, VPN, and virtual interfaces
+
+  - Override via `THUNK_HOST` environment variable
+
+
+  ### Authentication
+
+
+  **Per-session tokens:**
+
+  - Generated on session creation, stored in `state.yaml`
+
+  - Required in URL query param: `/edit/{session}?t={token}`
+
+
+  **Global token:**
+
+  - Stored in `.thunk/token`
+
+  - Required for session list: `/list?t={global_token}`
+
+
+  ### URL Format
+
+
+  ```
+
+  http://192.168.1.100:3456/edit/swift-river?t=abc123
+
+  http://192.168.1.100:3456/list?t=xyz789
+
+  ```
+
+
+  ## CLI Integration
+
+
+  ### Modified `thunk wait` Behavior
+
+
+  When turn completes successfully:
+
+  1. Start server if not running (fork + detach)
+
+  2. Generate/retrieve session token
+
+  3. Construct edit URL with local network IP + token
+
+  4. Copy URL to clipboard (via `clipboardy` package)
+
+  5. Print URL in JSON output
+
+
+  ```json
+
+  {
+    "turn": 1,
+    "phase": "user_review",
+    "file": ".thunk/sessions/swift-river/turns/001.md",
+    "edit_url": "http://192.168.1.100:3456/edit/swift-river?t=abc123",
+    "has_questions": false,
+    "hint": "User should edit file, then call continue or approve"
+  }
+
+  ```
+
+
+  ### Opt-out
+
+
+  Set `THUNK_WEB=0` to disable web server entirely. `thunk wait` behaves as
+  before (file path only, no URL).
+
+
+  ## Web UI
+
+
+  ### Routes
+
+
+  | Route | Auth | Description |
+
+  |-------|------|-------------|
+
+  | `/edit/{session}?t={token}` | Per-session | Edit current turn |
+
+  | `/list?t={token}` | Global | List all sessions with edit links |
+
+
+  ### Editor Page (`/edit/{session}`)
+
+
+  **Layout:**
+
+  - Minimal header bar: session name + "Turn N"
+
+  - Full-height Monaco editor
+
+  - Footer with action buttons
+
+
+  **Monaco Configuration:**
+
+  - Language: markdown
+
+  - Word wrap: on
+
+  - Line numbers: on
+
+  - Minimap: on
+
+  - Bracket matching: on
+
+  - No web workers (basic syntax highlighting only)
+
+  - Theme: follows system preference (light/dark via `prefers-color-scheme`)
+
+
+  **Buttons:**
+
+  - "Save" - commit current content to turn file
+
+  - "Save & Continue" - save, then trigger next turn
+
+
+  **Keyboard Shortcuts:**
+
+  - `Cmd/Ctrl+S` - Save
+
+  - `Cmd/Ctrl+Enter` - Save & Continue
+
+  - `Esc` - Close (navigate away)
+
+
+  ### Session List Page (`/list`)
+
+
+  Simple list of all sessions:
+
+  - Session name (human-friendly ID)
+
+  - Task description (truncated)
+
+  - Current turn + phase
+
+  - Edit link (for sessions in `user_review` phase)
+
+
+  ### Approved Sessions
+
+
+  Sessions with `phase: approved` show read-only view:
+
+  - Editor is read-only (no save buttons)
+
+  - Header shows "Approved" badge
+
+  - No edit functionality
+
+
+  ## File Operations
+
+
+  ### Draft Auto-save
+
+
+  - On every edit (debounced ~2 seconds), save to `{turn}-draft.md`
+
+  - Draft lives alongside turn file:
+  `.thunk/sessions/{session}/turns/001-draft.md`
+
+  - Cleared when user clicks "Save" (content moves to `001.md`)
+
+
+  ### Draft Recovery
+
+
+  On editor load:
+
+  1. Load committed file (`001.md`)
+
+  2. If draft exists (`001-draft.md`), show "Draft available" indicator
+
+  3. User can click to view diff and restore draft
+
+
+  ### Staleness Detection
+
+
+  - Record file mtime on page load
+
+  - On save, compare current mtime to recorded
+
+  - If mtime changed (file modified externally), fail with error
+
+  - User must reload page to get latest content
+
+
+  ### Browser Close Protection
+
+
+  - `beforeunload` event warns if unsaved changes exist
+
+  - Auto-save to draft on every edit (backup)
+
+  - localStorage not used (server is source of truth)
+
+
+  ## Save & Continue Flow
+
+
+  When user clicks "Save & Continue":
+
+  1. Save content to turn file
+
+  2. Close editor (return control to terminal)
+
+  3. Shell out to `thunk continue --session X && thunk wait --session X`
+
+  4. User monitors progress in terminal as before
+
+
+  ## Dependencies
+
+
+  ### Runtime
+
+
+  - `clipboardy` - cross-platform clipboard access
+
+
+  ### Build-time (dev)
+
+
+  - Monaco editor - bundled into package
+
+  - Lit - web components framework
+
+  - Bun bundler - for web assets
+
+
+  ### Asset Bundling
+
+
+  - Separate `bun run build:web` command
+
+  - Outputs to `dist/web/`
+
+  - Run during CI only (not during regular `build`/`typecheck`/`lint`)
+
+  - Bundled assets included in npm package (~1MB for Monaco)
+
+
+  ### Development
+
+
+  - Hot reload dev server for web UI iteration
+
+  - Bun bundler handles Monaco (no workers, basic highlighting)
+
+
+  ## Server Implementation
+
+
+  ### HTTP Server
+
+
+  Use `Bun.serve()` directly (no framework):
+
+  - Route matching via simple path parsing
+
+  - Static file serving for bundled assets
+
+  - JSON API for save operations
+
+
+  ### Endpoints
+
+
+  ```
+
+  GET  /edit/{session}?t={token}     -> HTML editor page
+
+  GET  /api/content/{session}?t={token} -> JSON { content, mtime }
+
+  POST /api/save/{session}?t={token}    -> Save content
+
+  POST /api/continue/{session}?t={token} -> Save + trigger continue
+
+  GET  /list?t={token}               -> HTML session list
+
+  GET  /assets/*                     -> Static files (Monaco, CSS, JS)
+
+  ```
+
+
+  ### Error Responses
+
+
+  - 401 Unauthorized - invalid or missing token
+
+  - 404 Not Found - session doesn't exist
+
+  - 409 Conflict - file modified externally (stale mtime)
+
+  - 423 Locked - session already approved (read-only)
+
+
+  ## File Structure
+
+
+  ```
+
+  src/
+
+  ├── server/
+
+  │   ├── index.ts        # Bun.serve() setup, routing
+
+  │   ├── daemon.ts       # Fork/detach, PID management
+
+  │   ├── auth.ts         # Token validation
+
+  │   └── handlers.ts     # Route handlers
+
+  ├── web/
+
+  │   ├── index.html      # Editor page template
+
+  │   ├── list.html       # Session list template
+
+  │   ├── editor.ts       # Lit component + Monaco setup
+
+  │   ├── styles.css      # Minimal styling
+
+  │   └── build.ts        # Bun bundler config
+
+  ```
+
+
+  ## Configuration Summary
+
+
+  | Setting | Value |
+
+  |---------|-------|
+
+  | Default port | 3456 (auto-increment) |
+
+  | Idle timeout | 24 hours |
+
+  | Pending check | On request + hourly |
+
+  | Auto-save debounce | ~2 seconds |
+
+  | Clipboard | Via clipboardy |
+
+  | Theme | System preference |
+
+  | Token storage | Per-session in state.yaml, global in .thunk/token |
+
+  | Log file | .thunk/server.log |
+
+  | Opt-out | THUNK_WEB=0 |
+created_at: '2025-12-30T22:53:22.473Z'
+config:
+  agents:
+    - id: opus
+      type: claude
+      model: opus
+      claude:
+        allowed_tools:
+          - Read
+          - Edit
+          - Write
+          - MultiEdit
+          - Glob
+          - Grep
+          - LS
+          - NotebookRead
+          - NotebookEdit
+          - WebFetch
+          - WebSearch
+          - Task
+          - Bash(git:*)
+          - Bash(ls:*)
+          - Bash(find:*)
+          - Bash(cat:*)
+          - Bash(head:*)
+          - Bash(tail:*)
+          - Bash(wc:*)
+          - Bash(grep:*)
+          - Bash(rg:*)
+          - Bash(tree:*)
+          - Bash(file:*)
+          - Bash(stat:*)
+          - Bash(du:*)
+          - Bash(pwd:*)
+          - Bash(echo:*)
+          - Bash(which:*)
+          - Bash(env:*)
+          - Bash(python:*)
+          - Bash(python3:*)
+          - Bash(node:*)
+          - Bash(npm:*)
+          - Bash(pnpm:*)
+          - Bash(yarn:*)
+          - Bash(pip:*)
+          - Bash(uv:*)
+          - Bash(cargo:*)
+          - Bash(go:*)
+          - Bash(make:*)
+          - Bash(jq:*)
+          - Bash(curl:*)
+          - Bash(diff:*)
+          - Bash(sort:*)
+          - Bash(uniq:*)
+          - Bash(xargs:*)
+          - Bash(sed:*)
+          - Bash(awk:*)
+      enabled: true
+    - id: codex
+      type: codex
+      model: gpt-5.2-codex
+      thinking: xhigh
+      codex:
+        full_auto: true
+        search: true
+      enabled: true
+  synthesizer:
+    id: synthesizer
+    type: claude
+    model: opus
+    claude:
+      allowed_tools:
+        - Read
+        - Edit
+        - Write
+        - MultiEdit
+        - Glob
+        - Grep
+        - LS
+        - NotebookRead
+        - NotebookEdit
+        - WebFetch
+        - WebSearch
+        - Task
+        - Bash(git:*)
+        - Bash(ls:*)
+        - Bash(find:*)
+        - Bash(cat:*)
+        - Bash(head:*)
+        - Bash(tail:*)
+        - Bash(wc:*)
+        - Bash(grep:*)
+        - Bash(rg:*)
+        - Bash(tree:*)
+        - Bash(file:*)
+        - Bash(stat:*)
+        - Bash(du:*)
+        - Bash(pwd:*)
+        - Bash(echo:*)
+        - Bash(which:*)
+        - Bash(env:*)
+        - Bash(python:*)
+        - Bash(python3:*)
+        - Bash(node:*)
+        - Bash(npm:*)
+        - Bash(pnpm:*)
+        - Bash(yarn:*)
+        - Bash(pip:*)
+        - Bash(uv:*)
+        - Bash(cargo:*)
+        - Bash(go:*)
+        - Bash(make:*)
+        - Bash(jq:*)
+        - Bash(curl:*)
+        - Bash(diff:*)
+        - Bash(sort:*)
+        - Bash(uniq:*)
+        - Bash(xargs:*)
+        - Bash(sed:*)
+        - Bash(awk:*)
+    enabled: true

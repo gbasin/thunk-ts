@@ -197,17 +197,18 @@ export function runCli(argv = process.argv): void {
       const paths = manager.getPaths(sessionId);
       const turnFile = paths.turnFile(state.turn);
 
-      outputJson(
-        {
-          session_id: state.sessionId,
-          turn: state.turn,
-          phase: state.phase,
-          file: (await fileExists(turnFile)) ? turnFile : null,
-          has_questions: await manager.hasQuestions(sessionId),
-          agents: Object.fromEntries(Object.entries(state.agents).map(([k, v]) => [k, v])),
-        },
-        pretty,
-      );
+      const result: Record<string, unknown> = {
+        session_id: state.sessionId,
+        turn: state.turn,
+        phase: state.phase,
+        file: (await fileExists(turnFile)) ? turnFile : null,
+        has_questions: await manager.hasQuestions(sessionId),
+        agents: Object.fromEntries(Object.entries(state.agents).map(([k, v]) => [k, v])),
+      };
+      if (Object.keys(state.agentErrors).length > 0) {
+        result.agent_errors = state.agentErrors;
+      }
+      outputJson(result, pretty);
     });
 
   prog
@@ -233,16 +234,17 @@ export function runCli(argv = process.argv): void {
       const turnFile = paths.turnFile(state.turn);
 
       if (state.phase === Phase.UserReview) {
-        outputJson(
-          {
-            turn: state.turn,
-            phase: state.phase,
-            file: turnFile,
-            has_questions: await manager.hasQuestions(sessionId),
-            hint: "User should edit file, then call continue or approve",
-          },
-          pretty,
-        );
+        const result: Record<string, unknown> = {
+          turn: state.turn,
+          phase: state.phase,
+          file: turnFile,
+          has_questions: await manager.hasQuestions(sessionId),
+          hint: "User should edit file, then call continue or approve",
+        };
+        if (Object.keys(state.agentErrors).length > 0) {
+          result.agent_errors = state.agentErrors;
+        }
+        outputJson(result, pretty);
         return;
       }
 
@@ -281,26 +283,28 @@ export function runCli(argv = process.argv): void {
         }
 
         if (success) {
-          outputJson(
-            {
-              turn: updatedState.turn,
-              phase: updatedState.phase,
-              file: turnFile,
-              has_questions: await manager.hasQuestions(sessionId),
-              hint: "User should edit file, then call continue or approve",
-            },
-            pretty,
-          );
+          const result: Record<string, unknown> = {
+            turn: updatedState.turn,
+            phase: updatedState.phase,
+            file: turnFile,
+            has_questions: await manager.hasQuestions(sessionId),
+            hint: "User should edit file, then call continue or approve",
+          };
+          if (Object.keys(updatedState.agentErrors).length > 0) {
+            result.agent_errors = updatedState.agentErrors;
+          }
+          outputJson(result, pretty);
         } else {
-          exitWithError(
-            {
-              turn: updatedState.turn,
-              phase: updatedState.phase,
-              error: "Turn failed",
-              hint: "Check agent logs in .thunk/sessions/<id>/agents/",
-            },
-            pretty,
-          );
+          const errorResult: Record<string, unknown> = {
+            turn: updatedState.turn,
+            phase: updatedState.phase,
+            error: "Turn failed",
+            hint: "Check agent logs in .thunk/sessions/<id>/agents/",
+          };
+          if (Object.keys(updatedState.agentErrors).length > 0) {
+            errorResult.agent_errors = updatedState.agentErrors;
+          }
+          exitWithError(errorResult, pretty);
         }
         return;
       }

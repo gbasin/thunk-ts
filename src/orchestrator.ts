@@ -17,6 +17,43 @@ function fileExists(filePath: string): Promise<boolean> {
     .catch(() => false);
 }
 
+function extractErrorSummary(output: string): string {
+  // Look for common error patterns and extract a concise summary
+  const lines = output.trim().split("\n");
+
+  // Check for "error:" prefix (common in CLI tools)
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.toLowerCase().startsWith("error:")) {
+      return trimmed;
+    }
+  }
+
+  // Check for lines containing "unexpected argument" or similar
+  for (const line of lines) {
+    const lower = line.toLowerCase();
+    if (
+      lower.includes("unexpected argument") ||
+      lower.includes("invalid option") ||
+      lower.includes("command not found") ||
+      lower.includes("permission denied") ||
+      lower.includes("timeout")
+    ) {
+      return line.trim();
+    }
+  }
+
+  // Return first non-empty line up to 200 chars, or truncated output
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.length > 0) {
+      return trimmed.length > 200 ? trimmed.slice(0, 200) + "..." : trimmed;
+    }
+  }
+
+  return output.length > 200 ? output.slice(0, 200) + "..." : output;
+}
+
 function unifiedDiff(params: {
   fromFile: string;
   toFile: string;
@@ -84,10 +121,16 @@ export class TurnOrchestrator {
     await this.manager.saveState(state);
 
     const drafts: Record<string, string> = {};
-    for (const [agentId, adapter] of Object.entries(this.adapters)) {
-      state.agents[agentId] = AgentStatus.Working;
-      await this.manager.saveState(state);
+    const projectRoot = path.resolve(this.manager.thunkDir, "..");
 
+    // Mark all agents as working upfront
+    for (const agentId of Object.keys(this.adapters)) {
+      state.agents[agentId] = AgentStatus.Working;
+    }
+    await this.manager.saveState(state);
+
+    // Run all agents in parallel
+    const draftPromises = Object.entries(this.adapters).map(async ([agentId, adapter]) => {
       const planId = state.agentPlanIds[agentId];
       const planFile = paths.agentPlanFile(planId);
 
@@ -104,8 +147,6 @@ export class TurnOrchestrator {
         userFeedback,
       });
 
-      const projectRoot = path.resolve(this.manager.thunkDir, "..");
-
       const sessionFile = paths.agentSessionFile(planId);
       await fs.mkdir(path.dirname(sessionFile), { recursive: true });
 
@@ -119,17 +160,25 @@ export class TurnOrchestrator {
         appendLog: true,
       });
 
+      return { agentId, planId, planFile, snapshotFile, success, output };
+    });
+
+    const draftResults = await Promise.all(draftPromises);
+
+    // Process results and update state
+    for (const { agentId, planFile, snapshotFile, success, output } of draftResults) {
       if (success) {
         const content = (await fileExists(planFile)) ? await fs.readFile(planFile, "utf8") : output;
         drafts[agentId] = content;
         await fs.writeFile(snapshotFile, content, "utf8");
         state.agents[agentId] = AgentStatus.Done;
+        delete state.agentErrors[agentId];
       } else {
         state.agents[agentId] = AgentStatus.Error;
+        state.agentErrors[agentId] = extractErrorSummary(output);
       }
-
-      await this.manager.saveState(state);
     }
+    await this.manager.saveState(state);
 
     if (Object.keys(drafts).length === 0) {
       state.phase = Phase.Error;
@@ -143,15 +192,20 @@ export class TurnOrchestrator {
     const finals: Record<string, string> = {};
     const agentIds = Object.keys(drafts);
 
-    for (let i = 0; i < agentIds.length; i += 1) {
-      const agentId = agentIds[i];
+    // Mark all agents as working upfront
+    for (const agentId of agentIds) {
+      if (this.adapters[agentId]) {
+        state.agents[agentId] = AgentStatus.Working;
+      }
+    }
+    await this.manager.saveState(state);
+
+    // Run all peer reviews in parallel
+    const reviewPromises = agentIds.map(async (agentId, i) => {
       const adapter = this.adapters[agentId];
       if (!adapter) {
-        continue;
+        return null;
       }
-
-      state.agents[agentId] = AgentStatus.Working;
-      await this.manager.saveState(state);
 
       const planId = state.agentPlanIds[agentId];
       const peerIdx = (i + 1) % agentIds.length;
@@ -182,18 +236,30 @@ export class TurnOrchestrator {
         appendLog: true,
       });
 
+      return { agentId, planFile, snapshotFile, success, output, fallbackDraft: drafts[agentId] };
+    });
+
+    const reviewResults = await Promise.all(reviewPromises);
+
+    // Process results and update state
+    for (const result of reviewResults) {
+      if (!result) continue;
+
+      const { agentId, planFile, snapshotFile, success, output, fallbackDraft } = result;
+
       if (success) {
         const content = (await fileExists(planFile)) ? await fs.readFile(planFile, "utf8") : output;
         finals[agentId] = content;
         await fs.writeFile(snapshotFile, content, "utf8");
         state.agents[agentId] = AgentStatus.Done;
+        delete state.agentErrors[agentId];
       } else {
-        finals[agentId] = drafts[agentId];
+        finals[agentId] = fallbackDraft;
         state.agents[agentId] = AgentStatus.Error;
+        state.agentErrors[agentId] = extractErrorSummary(output);
       }
-
-      await this.manager.saveState(state);
     }
+    await this.manager.saveState(state);
 
     state.phase = Phase.Synthesizing;
     await this.manager.saveState(state);

@@ -94,6 +94,7 @@ export class SessionManager {
       updated_at: string;
       agents?: Record<string, string>;
       agent_plan_ids?: Record<string, string>;
+      agent_errors?: Record<string, string>;
     };
 
     return new SessionState({
@@ -107,6 +108,7 @@ export class SessionManager {
         Object.entries(stateData.agents ?? {}).map(([key, value]) => [key, value as AgentStatus]),
       ),
       agentPlanIds: stateData.agent_plan_ids ?? {},
+      agentErrors: stateData.agent_errors ?? {},
     });
   }
 
@@ -116,13 +118,16 @@ export class SessionManager {
     }
 
     const paths = this.getPaths(state.sessionId);
-    const stateData = {
+    const stateData: Record<string, unknown> = {
       turn: state.turn,
       phase: state.phase,
       updated_at: state.updatedAt.toISOString(),
       agents: Object.fromEntries(Object.entries(state.agents).map(([key, value]) => [key, value])),
       agent_plan_ids: state.agentPlanIds,
     };
+    if (Object.keys(state.agentErrors).length > 0) {
+      stateData.agent_errors = state.agentErrors;
+    }
 
     await fs.writeFile(paths.state, dump(stateData), "utf8");
   }

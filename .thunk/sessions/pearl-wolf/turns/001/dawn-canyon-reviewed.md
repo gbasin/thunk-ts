@@ -1,0 +1,312 @@
+# Planning Task (Turn 1) — Revised
+
+## Assumptions
+
+| # | Assumption | Rationale |
+|---|------------|-----------|
+| A1 | `thunk wait` emits `edit_url` whenever returning `phase: user_review`, even if already in that phase | Ensures users always get a URL; matches "auto-starts when thunk wait completes" |
+| A2 | Per-session tokens generated lazily on first access, not at session creation | Backward-compatible with existing sessions; SPEC says "on session creation" but we need fallback |
+| A3 | Draft auto-save operations count as "activity" for the 24-hour idle timer | Prevents daemon shutdown mid-edit |
+| A4 | Server prefers `dist/web/` assets, falls back to `src/web/` when missing | Enables dev workflow without build step |
+| A5 | Bun's `Bun.spawn()` with `detached: true` suffices for daemon forking | No need for Node's `fork()` |
+| A6 | Clipboard failures are non-fatal; URL still printed to console | Graceful degradation for headless/SSH |
+| A7 | Server inherits `--thunk-dir` from CLI invocation via environment variable | Ensures consistency when non-default thunk directory is used |
+| A8 | 16-char base64url tokens provide sufficient security without being unwieldy | Balance between URL friendliness and entropy |
+
+---
+
+## Questions
+
+**Q1: Should `Save & Continue` block the HTTP request until `thunk wait` finishes, or return immediately?**
+- Context: The SPEC says to shell out to `thunk continue && thunk wait`, but that can take minutes. Blocking would require long HTTP timeouts and poor UX.
+- My lean: Return 202 immediately after kicking off the process. Browser polls `/api/status/{session}` until phase changes back to `user_review`. This matches "user monitors progress in terminal."
+- **Answer:**
+
+**Q2: Should we add a separate `/api/draft/{session}` endpoint, or overload `/api/save` with a mode flag?**
+- Context: SPEC only mentions `/api/save`. Draft auto-save is a distinct operation from explicit save.
+- My lean: Separate `/api/draft` endpoint for clarity — different semantics (no mtime check, no draft cleanup), simpler handlers.
+- **Answer:**
+
+**Q3: For draft recovery "view diff" feature, true diff view or simpler side-by-side?**
+- Context: True diff adds browser-side dependency; side-by-side is lighter but less informative.
+- My lean: Use the existing `diff` package (already a dependency) to render inline diff in a modal. Lightweight and consistent with server-side diff usage.
+- **Answer:**
+
+**Q4: When `--thunk-dir` is supplied to CLI, how should it propagate to the server?**
+- Context: Server walks up tree to find `.thunk`, but CLI may target a non-default directory.
+- My lean: Pass `THUNK_DIR` environment variable when spawning daemon; server uses it instead of auto-discovery.
+- **Answer:**
+
+---
+
+## Notes for Agents
+
+- Keep new files under 500 LOC; split utilities if needed.
+- Run `bun run lint && bun run test` after each batch of changes.
+- Tests should avoid accidentally starting real daemons; mock or use foreground mode.
+- Server and CLI share session/auth code — avoid duplication.
+
+---
+
+## Summary
+
+Add a Bun-based daemon web server that serves a Monaco/Lit markdown editor for thunk planning sessions. The server auto-starts when `thunk wait` completes (unless `THUNK_WEB=0`), provides per-session authenticated editing via URL tokens, and includes draft auto-save with recovery. The CLI is modified to output `edit_url` in JSON and copy it to clipboard. Asset bundling via `bun run build:web` outputs to `dist/web/`, with dev fallback to source files.
+
+---
+
+## Tasks
+
+### Phase 1: Token & Auth Infrastructure
+
+- [ ] **Task 1**: Add session token support to models and session manager
+  - **Files:** `src/models.ts` (modify), `src/session.ts` (modify)
+  - **Rationale:** Tokens must persist in `state.yaml`; lazy generation handles existing sessions
+  - **Dependencies:** none
+  - **Details:**
+    - Add optional `sessionToken?: string` to `SessionState`
+    - Update `toDict()` to serialize as `session_token`
+    - Update `loadSession()` to read `session_token` from state.yaml
+    - Update `saveState()` to write `session_token` if present
+    - Add `ensureSessionToken(sessionId): Promise<string>` — generates if missing, saves, returns
+
+- [ ] **Task 2**: Create authentication module
+  - **Files:** `src/server/auth.ts` (create)
+  - **Rationale:** Centralize token generation and validation logic
+  - **Dependencies:** Task 1
+  - **Details:**
+    - `generateToken(): string` — 16-char base64url via `crypto.randomBytes(12).toString('base64url')`
+    - `validateSessionToken(sessionId, token, manager): Promise<boolean>`
+    - `validateGlobalToken(token, thunkDir): Promise<boolean>`
+    - `ensureGlobalToken(thunkDir): Promise<string>` — creates `.thunk/token` if missing
+    - Timing-safe comparison to prevent timing attacks
+
+### Phase 2: Server Infrastructure
+
+- [ ] **Task 3**: Create daemon lifecycle management
+  - **Files:** `src/server/daemon.ts` (create)
+  - **Rationale:** Start/stop detached server process with PID tracking
+  - **Dependencies:** none
+  - **Details:**
+    - `startDaemon(thunkDir): Promise<{ pid: number, port: number }>` — spawns detached process
+    - `stopDaemon(thunkDir): Promise<boolean>` — sends SIGTERM, cleans up `server.json`
+    - `isDaemonRunning(thunkDir): Promise<{ running: boolean, port?: number, pid?: number }>` — validates PID with `process.kill(pid, 0)`
+    - Read/write `.thunk/server.json` with `{ pid, port, started_at, last_activity }`
+    - Remove stale `server.json` if PID is dead
+    - Pass `THUNK_DIR` env var to spawned process
+    - Log to `.thunk/server.log` (append mode)
+
+- [ ] **Task 4**: Create network utilities
+  - **Files:** `src/server/network.ts` (create)
+  - **Rationale:** IP detection and port finding for URL construction
+  - **Dependencies:** none
+  - **Details:**
+    - `getLocalIP(): string` — prefer en0/eth0, filter docker/VPN interfaces
+    - `findAvailablePort(start: number): Promise<number>` — try 3456, 3457, etc.
+    - Check `THUNK_HOST` env var override
+    - Fallback to `localhost` if no suitable interface found
+
+- [ ] **Task 5**: Create HTTP server and routing
+  - **Files:** `src/server/index.ts` (create), `src/server/handlers.ts` (create)
+  - **Rationale:** Main server entry point using Bun.serve() with route handlers
+  - **Dependencies:** Tasks 2, 3, 4
+  - **Details:**
+    - `Bun.serve()` binding to `0.0.0.0:{port}`
+    - Route matching: `/edit/:session`, `/list`, `/api/content/:session`, `/api/save/:session`, `/api/draft/:session`, `/api/continue/:session`, `/api/status/:session`, `/assets/*`
+    - Query param parsing for `?t={token}`
+    - Read `THUNK_DIR` env or walk up tree to find `.thunk`
+    - Track `last_activity` timestamp on save/draft operations
+    - Hourly idle check: shutdown if 24h inactive AND no `user_review` sessions
+    - Graceful shutdown: close server, remove `server.json`
+    - **Handlers:**
+      - `handleEdit` — serve HTML with injected session/token data
+      - `handleList` — serve session list HTML
+      - `handleGetContent` — JSON `{ content, mtime, turn, phase, readOnly, hasDraft }`
+      - `handleSave` — validate mtime, write file, delete draft, return new mtime
+      - `handleDraft` — write to `{turn}-draft.md`, update last_activity
+      - `handleContinue` — save, spawn `thunk continue && thunk wait`, return 202
+      - `handleStatus` — return current session state for polling
+      - `handleAssets` — serve from `dist/web/` or fallback to `src/web/`
+    - Error responses: 401 (bad token), 404 (no session), 409 (stale mtime), 423 (approved/locked)
+
+### Phase 3: CLI Integration
+
+- [ ] **Task 6**: Modify `thunk wait` for web server integration
+  - **Files:** `src/cli.ts` (modify), `package.json` (modify)
+  - **Rationale:** Auto-start server and emit `edit_url` when phase is `user_review`
+  - **Dependencies:** Tasks 1, 3, 4
+  - **Details:**
+    - Check `THUNK_WEB` env var (default enabled, `0` to disable)
+    - When returning `phase: user_review` (both after turn completion AND when already in that phase):
+      1. Call `isDaemonRunning()` — if not running, call `startDaemon()`
+      2. Call `manager.ensureSessionToken(sessionId)`
+      3. Get local IP via `getLocalIP()`
+      4. Construct URL: `http://{ip}:{port}/edit/{sessionId}?t={token}`
+      5. Try clipboard copy via `clipboardy`; catch and warn on failure
+      6. Add `edit_url` field to JSON output
+    - Add `clipboardy` as runtime dependency
+
+- [ ] **Task 7**: Add `thunk server` command
+  - **Files:** `src/cli.ts` (modify)
+  - **Rationale:** Manual server control for development and debugging
+  - **Dependencies:** Tasks 3, 5
+  - **Details:**
+    - `thunk server start` — start daemon, output port/URL
+    - `thunk server stop` — stop daemon
+    - `thunk server status` — check if running, show port/PID/URL
+    - `thunk server start --foreground` — run in foreground (for dev/debugging)
+    - Respect `--thunk-dir` global option
+
+### Phase 4: Web UI
+
+- [ ] **Task 8**: Create web build pipeline
+  - **Files:** `src/web/build.ts` (create), `package.json` (modify)
+  - **Rationale:** Bundle Monaco + Lit + app code for browser
+  - **Dependencies:** none
+  - **Details:**
+    - Bun bundler config: `src/web/editor.ts` → `dist/web/editor.js`
+    - Bun bundler config: `src/web/list.ts` → `dist/web/list.js`
+    - Copy `src/web/*.html`, `src/web/styles.css` to `dist/web/`
+    - Monaco config: disable workers, markdown language only
+    - Add `build:web` script to package.json
+    - Add `monaco-editor`, `lit` as dev dependencies
+
+- [ ] **Task 9**: Create editor page
+  - **Files:** `src/web/index.html` (create), `src/web/editor.ts` (create), `src/web/styles.css` (create)
+  - **Rationale:** Monaco-based markdown editor with save/continue functionality
+  - **Dependencies:** Task 8
+  - **Details:**
+    - **HTML template:**
+      - Header: session name, "Turn N", optional "Approved" badge
+      - Full-height Monaco container
+      - Footer: Save button, Save & Continue button
+      - Dark mode via `prefers-color-scheme`
+      - Inject `data-session`, `data-token` attributes
+    - **Lit component (`<thunk-editor>`):**
+      - Initialize Monaco: markdown, word wrap, line numbers, minimap
+      - Theme: `vs` / `vs-dark` based on `matchMedia('(prefers-color-scheme: dark)')`
+      - Keyboard shortcuts: Cmd/Ctrl+S (save), Cmd/Ctrl+Enter (continue), Esc (close)
+      - Fetch content from `/api/content/:session?t=...` on mount
+      - Track `mtime` from response; show staleness error on 409
+      - `beforeunload` warning for unsaved changes
+      - **Draft auto-save:** debounce 2s, POST to `/api/draft/:session?t=...`
+      - **Draft recovery:** if `hasDraft` in content response, show banner with "View diff" / "Restore" / "Discard"
+      - **Diff modal:** render inline diff using `diff` package (loaded on demand)
+      - Save: POST to `/api/save/:session?t=...` with content + expected mtime
+      - Continue: POST to `/api/continue/:session?t=...`, show spinner, poll `/api/status/:session?t=...` until phase changes
+    - **Read-only mode:** if `readOnly` in content response, disable editor, hide save buttons, show badge
+    - **Styles:**
+      - CSS variables for light/dark themes
+      - Full viewport height layout
+      - Button styling, modal styling
+      - Responsive (works on mobile Safari)
+
+- [ ] **Task 10**: Create session list page
+  - **Files:** `src/web/list.html` (create), `src/web/list.ts` (create)
+  - **Rationale:** Overview of all sessions with edit links
+  - **Dependencies:** Task 8
+  - **Details:**
+    - **HTML template:**
+      - Simple list/table layout
+      - Dark mode support
+    - **Lit component (`<thunk-list>`):**
+      - Fetch session list via embedded JSON or internal API
+      - Render: session name, task (truncated to ~80 chars), turn, phase, edit link
+      - Edit link only for `user_review` phase (include per-session token)
+      - "Approved" badge for completed sessions
+      - Sort by updated_at descending
+
+### Phase 5: Testing
+
+- [ ] **Task 11**: Add token and auth tests
+  - **Files:** `tests/session.test.ts` (modify), `tests/server.test.ts` (create)
+  - **Rationale:** Ensure token persistence and validation work correctly
+  - **Dependencies:** Tasks 1, 2
+  - **Details:**
+    - Test `SessionState` with `sessionToken` field
+    - Test `ensureSessionToken()` lazy generation
+    - Test token persistence in state.yaml
+    - Test `generateToken()` format (16-char base64url)
+    - Test `validateSessionToken()` / `validateGlobalToken()`
+    - Test `ensureGlobalToken()` file creation
+
+- [ ] **Task 12**: Add daemon and handler tests
+  - **Files:** `tests/server.test.ts` (modify)
+  - **Rationale:** Test server lifecycle without actually starting daemons
+  - **Dependencies:** Tasks 3, 5
+  - **Details:**
+    - Mock `Bun.spawn()` for daemon tests
+    - Test `isDaemonRunning()` with stale PID handling
+    - Test `findAvailablePort()` logic
+    - Test route matching
+    - Test handler responses (200, 401, 404, 409, 423)
+    - Test idle shutdown logic
+
+- [ ] **Task 13**: Add CLI integration tests
+  - **Files:** `tests/cli.test.ts` (modify)
+  - **Rationale:** Verify `thunk wait` emits `edit_url` correctly
+  - **Dependencies:** Tasks 6, 7
+  - **Details:**
+    - Mock daemon functions to avoid real server startup
+    - Test `edit_url` in JSON output when phase is `user_review`
+    - Test `THUNK_WEB=0` opt-out
+    - Test clipboard error handling
+    - Test `thunk server` subcommands
+
+- [ ] **Task 14**: Update documentation
+  - **Files:** `README.md` (modify)
+  - **Rationale:** Document new web editor feature and commands
+  - **Dependencies:** All above
+  - **Details:**
+    - Add "Web Editor" section explaining feature
+    - Document `THUNK_WEB=0` opt-out
+    - Document `thunk server` commands
+    - Add troubleshooting: firewall, port conflicts, clipboard issues
+    - Note `THUNK_HOST` override for IP detection
+
+---
+
+## Risks
+
+- **Stale PID / zombie server.json** (severity: medium)
+  - If server crashes, `server.json` may contain dead PID
+  - **Mitigation:** Always validate PID with `process.kill(pid, 0)` in `isDaemonRunning()`; remove stale file
+
+- **Monaco bundle size** (severity: medium)
+  - Monaco is ~1MB minified; increases package size
+  - **Mitigation:** Disable workers, include only markdown language, bundle once in CI
+
+- **Bun daemon detachment quirks** (severity: medium)
+  - `Bun.spawn()` detached behavior may differ from Node
+  - **Mitigation:** Test on macOS/Linux early; fallback to `nohup` wrapper if needed
+
+- **Save & Continue HTTP timeout** (severity: medium)
+  - If we blocked the request, browser/server would timeout
+  - **Mitigation:** Return 202 immediately, use polling for status updates
+
+- **Clipboard failures in headless/SSH** (severity: low)
+  - `clipboardy` may fail without display server
+  - **Mitigation:** Catch errors, still print URL, warn user
+
+- **Port conflicts** (severity: low)
+  - Port 3456 may be in use
+  - **Mitigation:** Auto-increment port (3457, 3458...)
+
+- **Cross-platform IP detection** (severity: low)
+  - Interface names differ between macOS (en0) and Linux (eth0, ens33)
+  - **Mitigation:** Use `os.networkInterfaces()` with heuristics; allow `THUNK_HOST` override
+
+---
+
+## Alternatives Considered
+
+- **WebSocket for real-time updates**: Rejected because polling is simpler and sufficient for single-user editing with 2s debounce
+
+- **Separate npm package for server**: Rejected because tight CLI integration is required; single package is simpler
+
+- **CodeMirror instead of Monaco**: Rejected because Monaco has better markdown support and is familiar to VS Code users
+
+- **Express/Hono framework**: Rejected because Bun.serve() is simpler with no dependencies; routing is minimal
+
+- **localStorage for drafts**: Rejected because server is source of truth; would cause sync issues with multi-device access
+
+- **In-process server (no daemon)**: Rejected because server must survive beyond `thunk wait` for mobile device access
