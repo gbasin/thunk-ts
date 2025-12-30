@@ -1,0 +1,34 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "thunk",
+  "owner": {
+    "name": "Gary Basin"
+  },
+  "metadata": {
+    "description": "Multi-agent ensemble planning CLI (Bun + TypeScript)",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "thunk",
+      "source": "./plugin",
+      "description": "Orchestrate Claude Code and Codex to collaboratively create implementation plans with human-in-the-loop review",
+      "version": "0.1.0",
+      "author": {
+        "name": "Gary Basin"
+      },
+      "repository": "https://github.com/gbasin/thunk-ts",
+      "license": "MIT",
+      "keywords": [
+        "planning",
+        "multi-agent",
+        "ensemble",
+        "orchestration",
+        "implementation-plans",
+        "codex",
+        "claude-code"
+      ],
+      "category": "development"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT=$(git rev-parse --show-toplevel)
+cd "$ROOT"
+
+if ! command -v bun >/dev/null 2>&1; then
+  echo "[pre-commit] bun not found; install it first." >&2
+  exit 1
+fi
+
+# Auto-format before quality checks
+bun run format >/dev/null 2>&1 || true
+
+# Re-stage any formatted files
+git add -u
+
+"$ROOT/scripts/run-quality-checks.sh"
