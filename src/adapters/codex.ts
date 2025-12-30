@@ -50,15 +50,42 @@ function buildCmd(
   threadId?: string | null,
   projectRoot?: string | null,
 ): string[] {
-  const cmd = ["codex", "exec", "--json", "--full-auto"];
+  const cmd = ["codex", "exec", "--json"];
   if (config.model) {
     cmd.push("--model", config.model);
   }
   if (config.thinking) {
     cmd.push("--thinking", config.thinking);
   }
+  if (config.configOverrides) {
+    for (const override of config.configOverrides) {
+      cmd.push("--config", override);
+    }
+  }
+
+  if (config.dangerouslyBypass) {
+    cmd.push("--dangerously-bypass-approvals-and-sandbox");
+  } else {
+    const hasSandboxConfig = Boolean(config.sandbox || config.approvalPolicy);
+    const fullAuto = config.fullAuto ?? true;
+    if (fullAuto && !hasSandboxConfig) {
+      cmd.push("--full-auto");
+    }
+    if (config.sandbox) {
+      cmd.push("--sandbox", config.sandbox);
+    }
+    if (config.approvalPolicy) {
+      cmd.push("--ask-for-approval", config.approvalPolicy);
+    }
+  }
+
   if (projectRoot) {
     cmd.push("--add-dir", projectRoot);
+  }
+  if (config.addDir) {
+    for (const dir of config.addDir) {
+      cmd.push("--add-dir", dir);
+    }
   }
   if (threadId) {
     cmd.push("resume", threadId, prompt);

@@ -58,6 +58,15 @@ agents:
     type: codex
     model: codex-5.2
     thinking: xmax
+    full_auto: true
+    # To override full_auto, set sandbox/approval_policy below.
+    # sandbox: workspace-write
+    # approval_policy: on-request
+    # dangerously_bypass: false
+    # add_dir:
+    #   - path/to/extra/dir
+    # config_overrides:
+    #   - 'sandbox_permissions=["disk-full-read-access"]'
     enabled: true
 synthesizer:
   id: synthesizer

@@ -291,12 +291,22 @@ describe("Adapters", () => {
         type: "codex",
         model: "codex-5.2",
         thinking: "xmax",
+        fullAuto: false,
+        sandbox: "read-only",
+        approvalPolicy: "untrusted",
+        addDir: ["extra-dir"],
+        configOverrides: ['sandbox_permissions=["disk-full-read-access"]'],
       });
       const syncAdapter = new CodexCLISyncAdapter({
         id: "codex-sync",
         type: "codex",
         model: "codex-5.2",
         thinking: "xmax",
+        fullAuto: false,
+        sandbox: "read-only",
+        approvalPolicy: "untrusted",
+        addDir: ["extra-dir"],
+        configOverrides: ['sandbox_permissions=["disk-full-read-access"]'],
       });
 
       const originalSpawn = Bun.spawn;
@@ -329,17 +339,33 @@ describe("Adapters", () => {
 
       expect(commands.length).toBe(2);
       expect(commands[0]).toContain("--add-dir");
+      expect(commands[0]).toContain("--sandbox");
+      expect(commands[0]).toContain("read-only");
+      expect(commands[0]).toContain("--ask-for-approval");
+      expect(commands[0]).toContain("untrusted");
+      expect(commands[0]).toContain("--config");
+      expect(commands[0]).toContain('sandbox_permissions=["disk-full-read-access"]');
+      expect(commands[0]).toContain("extra-dir");
       expect(commands[0]).toContain("--model");
       expect(commands[0]).toContain("codex-5.2");
       expect(commands[0]).toContain("--thinking");
       expect(commands[0]).toContain("xmax");
+      expect(commands[0]).not.toContain("--full-auto");
       expect(commands[0]).toContain("resume");
       expect(commands[0]).toContain("thread-123");
       expect(commands[1]).toContain("--add-dir");
+      expect(commands[1]).toContain("--sandbox");
+      expect(commands[1]).toContain("read-only");
+      expect(commands[1]).toContain("--ask-for-approval");
+      expect(commands[1]).toContain("untrusted");
+      expect(commands[1]).toContain("--config");
+      expect(commands[1]).toContain('sandbox_permissions=["disk-full-read-access"]');
+      expect(commands[1]).toContain("extra-dir");
       expect(commands[1]).toContain("--model");
       expect(commands[1]).toContain("codex-5.2");
       expect(commands[1]).toContain("--thinking");
       expect(commands[1]).toContain("xmax");
+      expect(commands[1]).not.toContain("--full-auto");
       expect(commands[1]).toContain("resume");
       expect(commands[1]).toContain("thread-123");
       expect(adapter.getName()).toBe("Codex CLI (codex-5.2)");

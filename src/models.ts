@@ -25,6 +25,12 @@ export interface AgentConfig {
   model: string;
   thinking?: string;
   allowedTools?: string[];
+  sandbox?: string;
+  approvalPolicy?: string;
+  fullAuto?: boolean;
+  dangerouslyBypass?: boolean;
+  addDir?: string[];
+  configOverrides?: string[];
   enabled?: boolean;
 }
 
@@ -41,7 +47,14 @@ function defaultConfigParams(): ThunkConfigParams {
   return {
     agents: [
       { id: "opus", type: "claude", model: "opus", enabled: true },
-      { id: "codex", type: "codex", model: "codex-5.2", thinking: "xmax", enabled: true },
+      {
+        id: "codex",
+        type: "codex",
+        model: "codex-5.2",
+        thinking: "xmax",
+        fullAuto: true,
+        enabled: true,
+      },
     ],
     synthesizer: { id: "synthesizer", type: "claude", model: "opus", enabled: true },
   };
@@ -78,6 +91,16 @@ function parseEnabled(value: unknown, field: string): boolean {
   return value;
 }
 
+function optionalBoolean(value: unknown, field: string): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "boolean") {
+    throw new Error(`${field} must be a boolean`);
+  }
+  return value;
+}
+
 function parseTimeout(value: unknown): number {
   if (typeof value !== "number" || Number.isNaN(value) || !Number.isFinite(value)) {
     throw new Error("timeout must be a finite number");
@@ -88,7 +111,7 @@ function parseTimeout(value: unknown): number {
   return value;
 }
 
-function parseAllowedTools(value: unknown, field: string): string[] {
+function parseStringList(value: unknown, field: string): string[] {
   if (!Array.isArray(value)) {
     throw new Error(`${field} must be a list`);
   }
@@ -107,6 +130,15 @@ function parseAgentConfig(
     throw new Error(`${field} must be a mapping`);
   }
   const allowedToolsValue = value.allowed_tools ?? value.allowedTools;
+  const approvalPolicyValue =
+    value.approval_policy ?? value.ask_for_approval ?? value.askForApproval ?? value.approvalPolicy;
+  const dangerouslyBypassValue =
+    value.dangerously_bypass ??
+    value.dangerously_bypass_approvals_and_sandbox ??
+    value.dangerouslyBypass;
+  const fullAutoValue = value.full_auto ?? value.fullAuto;
+  const addDirValue = value.add_dir ?? value.addDir;
+  const configOverridesValue = value.config_overrides ?? value.configOverrides;
   return {
     id: requireString(value.id, `${field}.id`),
     type: requireString(value.type, `${field}.type`),
@@ -115,7 +147,17 @@ function parseAgentConfig(
     allowedTools:
       allowedToolsValue === undefined
         ? defaultAllowedTools
-        : parseAllowedTools(allowedToolsValue, `${field}.allowed_tools`),
+        : parseStringList(allowedToolsValue, `${field}.allowed_tools`),
+    sandbox: optionalString(value.sandbox, `${field}.sandbox`),
+    approvalPolicy: optionalString(approvalPolicyValue, `${field}.approval_policy`),
+    fullAuto: optionalBoolean(fullAutoValue, `${field}.full_auto`),
+    dangerouslyBypass: optionalBoolean(dangerouslyBypassValue, `${field}.dangerously_bypass`),
+    addDir:
+      addDirValue === undefined ? undefined : parseStringList(addDirValue, `${field}.add_dir`),
+    configOverrides:
+      configOverridesValue === undefined
+        ? undefined
+        : parseStringList(configOverridesValue, `${field}.config_overrides`),
     enabled: parseEnabled(value.enabled, `${field}.enabled`),
   };
 }
@@ -168,7 +210,7 @@ function parseThunkConfig(value: unknown): ThunkConfigParams {
   const allowedToolsDefault =
     allowedToolsValue === undefined
       ? undefined
-      : parseAllowedTools(allowedToolsValue, "allowed_tools");
+      : parseStringList(allowedToolsValue, "allowed_tools");
   const agents =
     value.agents === undefined
       ? applyAllowedTools(defaults.agents, allowedToolsDefault)
@@ -345,6 +387,24 @@ export class ThunkConfig {
       }
       if (agent.allowedTools && agent.allowedTools.length > 0) {
         data.allowed_tools = agent.allowedTools;
+      }
+      if (agent.sandbox) {
+        data.sandbox = agent.sandbox;
+      }
+      if (agent.approvalPolicy) {
+        data.approval_policy = agent.approvalPolicy;
+      }
+      if (agent.fullAuto !== undefined) {
+        data.full_auto = agent.fullAuto;
+      }
+      if (agent.dangerouslyBypass !== undefined) {
+        data.dangerously_bypass = agent.dangerouslyBypass;
+      }
+      if (agent.addDir && agent.addDir.length > 0) {
+        data.add_dir = agent.addDir;
+      }
+      if (agent.configOverrides && agent.configOverrides.length > 0) {
+        data.config_overrides = agent.configOverrides;
       }
       if (agent.enabled !== undefined) {
         data.enabled = agent.enabled;
