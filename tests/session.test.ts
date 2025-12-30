@@ -113,6 +113,23 @@ describe("SessionManager", () => {
     });
   });
 
+  it("persists agent errors in state", async () => {
+    await withTempDir(async (root) => {
+      const manager = new SessionManager(path.join(root, ".thunk-test"));
+      const state = await manager.createSession("Test task");
+      state.agentErrors = { codex: "error: draft failed" };
+      await manager.saveState(state);
+
+      const loaded = await manager.loadSession(state.sessionId);
+      expect(loaded?.agentErrors).toEqual({ codex: "error: draft failed" });
+
+      const paths = manager.getPaths(state.sessionId);
+      const stateContent = await fs.readFile(paths.state, "utf8");
+      const stateData = load(stateContent) as { agent_errors?: Record<string, string> };
+      expect(stateData.agent_errors).toEqual({ codex: "error: draft failed" });
+    });
+  });
+
   it("cleans sessions", async () => {
     await withTempDir(async (root) => {
       const manager = new SessionManager(path.join(root, ".thunk-test"));

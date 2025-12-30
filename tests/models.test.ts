@@ -49,6 +49,23 @@ describe("SessionState", () => {
     expect(dict.agents).toEqual({ opus: "done" });
     expect(dict.agent_plan_ids).toEqual({ opus: "sunny-glade" });
   });
+
+  it("serializes agent errors when present", () => {
+    const now = new Date("2024-01-01T00:00:00Z");
+    const state = new SessionState({
+      sessionId: "test-session",
+      task: "Test task",
+      turn: 1,
+      phase: Phase.UserReview,
+      createdAt: now,
+      updatedAt: now,
+      agentErrors: { codex: "error: draft failed" },
+    });
+
+    const dict = state.toDict();
+
+    expect(dict.agent_errors).toEqual({ codex: "error: draft failed" });
+  });
 });
 
 describe("SessionPaths", () => {

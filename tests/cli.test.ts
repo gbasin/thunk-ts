@@ -93,6 +93,24 @@ describe("CLI", () => {
     });
   });
 
+  it("status includes agent errors when present", async () => {
+    await withTempDir(async (root) => {
+      const repoRoot = path.resolve(import.meta.dir, "..");
+      const thunkDir = path.join(root, ".thunk-test");
+      const manager = new SessionManager(thunkDir);
+      const state = await manager.createSession("Test feature");
+      state.agentErrors = { codex: "error: draft failed" };
+      await manager.saveState(state);
+
+      const result = runCli(
+        ["--thunk-dir", thunkDir, "status", "--session", state.sessionId],
+        repoRoot,
+      );
+      const data = JSON.parse(result.stdout);
+      expect(data.agent_errors).toEqual({ codex: "error: draft failed" });
+    });
+  });
+
   it("clean removes sessions", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
@@ -217,6 +235,45 @@ process.exit(1);
         expect(data.phase).toBe(Phase.UserReview);
         expect(data.agent_errors).toEqual({ codex: "error: codex failed" });
         expect(await fs.readFile(data.file, "utf8")).toContain("# Plan");
+      });
+    });
+  });
+
+  it("wait reports agent errors when drafting fails", async () => {
+    await withTempDir(async (root) => {
+      const repoRoot = path.resolve(import.meta.dir, "..");
+      const thunkDir = path.join(root, ".thunk-test");
+      const binDir = path.join(root, "bin");
+      await fs.mkdir(binDir, { recursive: true });
+
+      await writeExecutable(
+        path.join(binDir, "claude"),
+        `#!/usr/bin/env bun
+process.stderr.write("unexpected argument: --bad-flag");
+process.exit(1);
+`,
+      );
+
+      await writeExecutable(
+        path.join(binDir, "codex"),
+        `#!/usr/bin/env bun
+process.stderr.write("invalid option: --oops");
+process.exit(1);
+`,
+      );
+
+      await withPatchedPath(binDir, async () => {
+        const init = runCli(["--thunk-dir", thunkDir, "init", "Test feature"], repoRoot);
+        const sessionId = JSON.parse(init.stdout).session_id as string;
+
+        const result = runCli(["--thunk-dir", thunkDir, "wait", "--session", sessionId], repoRoot);
+        expect(result.exitCode).toBe(1);
+        const data = JSON.parse(result.stdout);
+        expect(data.error).toBe("Turn failed");
+        expect(data.agent_errors).toEqual({
+          opus: "unexpected argument: --bad-flag",
+          codex: "invalid option: --oops",
+        });
       });
     });
   });

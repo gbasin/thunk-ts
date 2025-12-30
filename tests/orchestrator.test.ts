@@ -3,6 +3,8 @@ import os from "os";
 import path from "path";
 import { describe, expect, it } from "bun:test";
 
+import { AgentHandle, AgentAdapter } from "../src/adapters/base";
+import type { AgentConfig } from "../src/models";
 import { Phase, ThunkConfig } from "../src/models";
 import { TurnOrchestrator } from "../src/orchestrator";
 import { SessionManager } from "../src/session";
@@ -53,6 +55,31 @@ async function waitForFiles(files: string[], timeoutMs: number): Promise<void> {
   const states = await Promise.all(files.map((file) => fileExists(file)));
   const missing = files.filter((_, index) => !states[index]);
   throw new Error(`Timed out waiting for files: ${missing.join(", ")}`);
+}
+
+class StubAdapter extends AgentAdapter {
+  private readonly responses: Array<[boolean, string]>;
+  private callCount = 0;
+
+  constructor(config: AgentConfig, responses: Array<[boolean, string]>) {
+    super(config);
+    this.responses = responses;
+  }
+
+  spawn(): AgentHandle {
+    throw new Error("StubAdapter.spawn is not implemented");
+  }
+
+  async runSync(): Promise<[boolean, string]> {
+    const index = Math.min(this.callCount, this.responses.length - 1);
+    const response = this.responses[index];
+    this.callCount += 1;
+    return response;
+  }
+
+  getName(): string {
+    return `StubAdapter(${this.config.id})`;
+  }
 }
 
 describe("TurnOrchestrator", () => {
@@ -201,6 +228,120 @@ for (const line of lines) {
 
         expect(success).toBe(true);
       });
+    });
+  });
+
+  it("summarizes agent errors from output", async () => {
+    await withTempDir(async (root) => {
+      const cases = [
+        {
+          id: "error-prefix",
+          output: "error: unable to connect",
+          expected: "error: unable to connect",
+        },
+        {
+          id: "keyword-match",
+          output: "warning: noop\nunexpected argument: --bad-flag",
+          expected: "unexpected argument: --bad-flag",
+        },
+        {
+          id: "truncate-line",
+          output: "a".repeat(220),
+          expected: `${"a".repeat(200)}...`,
+        },
+        {
+          id: "whitespace-fallback",
+          output: " ".repeat(250),
+          expected: `${" ".repeat(200)}...`,
+        },
+      ];
+
+      for (const testCase of cases) {
+        const manager = new SessionManager(path.join(root, `.thunk-${testCase.id}`));
+        const state = await manager.createSession("Test task");
+        state.phase = Phase.Drafting;
+        await manager.saveState(state);
+
+        const agentConfig: AgentConfig = { id: "opus", type: "claude", model: "stub" };
+        const config = new ThunkConfig({
+          agents: [agentConfig],
+          synthesizer: { id: "synth", type: "claude", model: "stub" },
+        });
+        const orchestrator = new TurnOrchestrator(manager, config);
+        orchestrator.adapters = {
+          opus: new StubAdapter(agentConfig, [[false, testCase.output]]),
+        };
+
+        const success = await orchestrator.runTurn(state.sessionId);
+        expect(success).toBe(false);
+
+        const updated = await manager.loadSession(state.sessionId);
+        expect(updated?.phase).toBe(Phase.Error);
+        expect(updated?.agentErrors.opus).toBe(testCase.expected);
+      }
+    });
+  });
+
+  it("clears agent errors after successful runs", async () => {
+    await withTempDir(async (root) => {
+      const manager = new SessionManager(path.join(root, ".thunk-test"));
+      const state = await manager.createSession("Test task");
+      state.phase = Phase.Drafting;
+      state.agentErrors = { opus: "error: previous failure" };
+      await manager.saveState(state);
+
+      const agentConfig: AgentConfig = { id: "opus", type: "claude", model: "stub" };
+      const config = new ThunkConfig({
+        agents: [agentConfig],
+        synthesizer: { id: "synth", type: "claude", model: "stub" },
+      });
+      const orchestrator = new TurnOrchestrator(manager, config);
+      orchestrator.adapters = {
+        opus: new StubAdapter(agentConfig, [
+          [true, "# Draft plan"],
+          [true, "# Reviewed plan"],
+        ]),
+      };
+
+      const success = await orchestrator.runTurn(state.sessionId);
+      expect(success).toBe(true);
+
+      const updated = await manager.loadSession(state.sessionId);
+      expect(updated?.agentErrors).toEqual({});
+    });
+  });
+
+  it("falls back to drafts when peer review fails", async () => {
+    await withTempDir(async (root) => {
+      const manager = new SessionManager(path.join(root, ".thunk-test"));
+      const state = await manager.createSession("Test task");
+      state.phase = Phase.Drafting;
+      await manager.saveState(state);
+
+      const draft = "# Draft plan";
+      const agentConfig: AgentConfig = { id: "opus", type: "claude", model: "stub" };
+      const config = new ThunkConfig({
+        agents: [agentConfig],
+        synthesizer: { id: "synth", type: "claude", model: "stub" },
+      });
+      const orchestrator = new TurnOrchestrator(manager, config);
+      orchestrator.adapters = {
+        opus: new StubAdapter(agentConfig, [
+          [true, draft],
+          [false, "error: review failed"],
+        ]),
+      };
+
+      const success = await orchestrator.runTurn(state.sessionId);
+      expect(success).toBe(true);
+
+      const paths = manager.getPaths(state.sessionId);
+      const turnFile = paths.turnFile(1);
+      const content = await fs.readFile(turnFile, "utf8");
+      expect(content).toBe(draft);
+
+      const updated = await manager.loadSession(state.sessionId);
+      expect(updated?.agentErrors).toEqual({ opus: "error: review failed" });
     });
   });
 

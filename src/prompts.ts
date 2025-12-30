@@ -28,6 +28,21 @@ _If revised: ~~old~~ → new_
 
 [2-3 sentence overview of the approach]
 
+## Diagrams (optional)
+
+When helpful, include ASCII diagrams to illustrate:
+- Architecture or component relationships
+- Data/control flow
+- State transitions
+
+\`\`\`
+┌─────────┐     ┌─────────┐
+│ Client  │────▶│ Server  │
+└─────────┘     └─────────┘
+\`\`\`
+
+_(Delete this section if no diagrams are needed)_
+
 ## Tasks
 
 - [ ] **Task 1**: [Description]
