@@ -1,22 +1,20 @@
 export const PLAN_FORMAT = `
 ## Clarifications
 
-Surface ambiguities early to avoid wasted work.
+### Assumptions
 
-### Assumptions (proceeding with these — correct if wrong)
+| # | Assumption | Rationale |
+|---|------------|-----------|
+| A1 | [What you're assuming] | [Why you think this] |
 
-| # | Assumption | Rationale | If Wrong |
-|---|------------|-----------|----------|
-| A1 | [What you're assuming] | [Why you think this] | [Impact of being wrong] |
+_If revised: ~~old~~ → new_
 
-_Delete rows you disagree with, or add corrections inline._
-
-### Questions (need your input)
+### Questions
 
 **Q1: [Question]?**
-- Context: [Why this matters for the plan]
-- My lean: [Your best guess, even if uncertain]
-- If unanswered: [What you'll default to]
+- Context: [Why this matters]
+- My lean: [Your best guess]
+- **Answer:**
 
 ---
 
@@ -159,6 +157,12 @@ The user made these changes to the plan:
 **Key principle:** Respect the user's INTENT, not just their exact words.
 If the user asked a question, the agents should have answered it—synthesize their answer.
 If the user deleted something, it stays deleted even if agents still mention it.
+
+**Managing the Clarifications section:**
+- **Assumptions:** If user corrects one, use strikethrough: ~~old~~ → new
+- **Questions:** When answered, fill in the **Answer:** field
+- **New user questions:** If user asks something anywhere in the doc, add it as a new Q
+  in Clarifications with your "My lean" — don't leave raw questions scattered in the plan
 `;
 
 const REFINE_PROMPT = `# Plan Refinement Task (Turn {turn})
