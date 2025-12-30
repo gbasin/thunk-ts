@@ -3,6 +3,7 @@ import fsSync from "fs";
 import path from "path";
 
 import type { AgentConfig } from "../models";
+import { DEFAULT_CLAUDE_ALLOWED_TOOLS } from "../defaults";
 import { AgentAdapter, AgentHandle } from "./base";
 
 async function readSessionId(sessionFile?: string): Promise<string | null> {
@@ -44,61 +45,12 @@ async function writeSessionId(
   await fs.rename(tempFile, sessionFile);
 }
 
-const DEFAULT_ALLOWED_TOOLS = [
-  "Read",
-  "Edit",
-  "Write",
-  "MultiEdit",
-  "Glob",
-  "Grep",
-  "LS",
-  "NotebookRead",
-  "NotebookEdit",
-  "WebFetch",
-  "WebSearch",
-  "Task",
-  "Bash(git:*)",
-  "Bash(ls:*)",
-  "Bash(find:*)",
-  "Bash(cat:*)",
-  "Bash(head:*)",
-  "Bash(tail:*)",
-  "Bash(wc:*)",
-  "Bash(grep:*)",
-  "Bash(rg:*)",
-  "Bash(tree:*)",
-  "Bash(file:*)",
-  "Bash(stat:*)",
-  "Bash(du:*)",
-  "Bash(pwd:*)",
-  "Bash(echo:*)",
-  "Bash(which:*)",
-  "Bash(env:*)",
-  "Bash(python:*)",
-  "Bash(python3:*)",
-  "Bash(node:*)",
-  "Bash(npm:*)",
-  "Bash(pnpm:*)",
-  "Bash(yarn:*)",
-  "Bash(pip:*)",
-  "Bash(uv:*)",
-  "Bash(cargo:*)",
-  "Bash(go:*)",
-  "Bash(make:*)",
-  "Bash(jq:*)",
-  "Bash(curl:*)",
-  "Bash(diff:*)",
-  "Bash(sort:*)",
-  "Bash(uniq:*)",
-  "Bash(xargs:*)",
-  "Bash(sed:*)",
-  "Bash(awk:*)",
-];
+const DEFAULT_ALLOWED_TOOLS = DEFAULT_CLAUDE_ALLOWED_TOOLS;
 
 const WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 
 function shouldPreferOutput(config: AgentConfig): boolean {
-  const allowedTools = config.allowedTools ?? DEFAULT_ALLOWED_TOOLS;
+  const allowedTools = config.claude?.allowedTools ?? DEFAULT_ALLOWED_TOOLS;
   return !allowedTools.some((tool) => WRITE_TOOLS.has(tool));
 }
 
@@ -115,8 +67,19 @@ function buildCmd(
   }
 
   if (projectRoot) {
-    cmd.push("--add-dir", projectRoot);
-    const allowedTools = config.allowedTools ?? DEFAULT_ALLOWED_TOOLS;
+    const addDirs = [projectRoot, ...(config.claude?.addDir ?? [])];
+    for (const dir of addDirs) {
+      cmd.push("--add-dir", dir);
+    }
+    const allowedTools = config.claude?.allowedTools ?? DEFAULT_ALLOWED_TOOLS;
+    if (allowedTools.length > 0) {
+      cmd.push("--allowedTools", ...allowedTools);
+    }
+  } else if (config.claude?.addDir && config.claude.addDir.length > 0) {
+    for (const dir of config.claude.addDir) {
+      cmd.push("--add-dir", dir);
+    }
+    const allowedTools = config.claude.allowedTools ?? DEFAULT_ALLOWED_TOOLS;
     if (allowedTools.length > 0) {
       cmd.push("--allowedTools", ...allowedTools);
     }

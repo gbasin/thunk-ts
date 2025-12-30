@@ -184,13 +184,13 @@ describe("Adapters", () => {
         id: "claude",
         type: "claude",
         model: "sonnet",
-        allowedTools: ["Read"],
+        claude: { allowedTools: ["Read"] },
       });
       const syncAdapter = new ClaudeCodeSyncAdapter({
         id: "claude-sync",
         type: "claude",
         model: "sonnet",
-        allowedTools: ["Read"],
+        claude: { allowedTools: ["Read"] },
       });
 
       const originalSpawn = Bun.spawn;
@@ -291,24 +291,26 @@ describe("Adapters", () => {
         type: "codex",
         model: "codex-5.2",
         thinking: "xmax",
-        fullAuto: false,
-        sandbox: "read-only",
-        approvalPolicy: "untrusted",
-        addDir: ["extra-dir"],
-        configOverrides: ['sandbox_permissions=["disk-full-read-access"]'],
-        search: true,
+        codex: {
+          fullAuto: false,
+          sandbox: "read-only",
+          approvalPolicy: "untrusted",
+          addDir: ["extra-dir"],
+          search: true,
+        },
       });
       const syncAdapter = new CodexCLISyncAdapter({
         id: "codex-sync",
         type: "codex",
         model: "codex-5.2",
         thinking: "xmax",
-        fullAuto: false,
-        sandbox: "read-only",
-        approvalPolicy: "untrusted",
-        addDir: ["extra-dir"],
-        configOverrides: ['sandbox_permissions=["disk-full-read-access"]'],
-        search: true,
+        codex: {
+          fullAuto: false,
+          sandbox: "read-only",
+          approvalPolicy: "untrusted",
+          addDir: ["extra-dir"],
+          search: true,
+        },
       });
 
       const originalSpawn = Bun.spawn;
@@ -346,8 +348,6 @@ describe("Adapters", () => {
       expect(commands[0]).toContain("read-only");
       expect(commands[0]).toContain("--ask-for-approval");
       expect(commands[0]).toContain("untrusted");
-      expect(commands[0]).toContain("--config");
-      expect(commands[0]).toContain('sandbox_permissions=["disk-full-read-access"]');
       expect(commands[0]).toContain("extra-dir");
       expect(commands[0]).toContain("--model");
       expect(commands[0]).toContain("codex-5.2");
@@ -362,8 +362,6 @@ describe("Adapters", () => {
       expect(commands[1]).toContain("read-only");
       expect(commands[1]).toContain("--ask-for-approval");
       expect(commands[1]).toContain("untrusted");
-      expect(commands[1]).toContain("--config");
-      expect(commands[1]).toContain('sandbox_permissions=["disk-full-read-access"]');
       expect(commands[1]).toContain("extra-dir");
       expect(commands[1]).toContain("--model");
       expect(commands[1]).toContain("codex-5.2");
@@ -376,6 +374,57 @@ describe("Adapters", () => {
       expect(syncAdapter.getName()).toBe("Codex CLI Sync (codex-5.2)");
       expect(await fs.readFile(logFile, "utf8")).toBe("");
       expect(await fs.readFile(logFileSync, "utf8")).toBe("");
+    });
+  });
+
+  it("Codex adapter writes config file when MCP config is set", async () => {
+    await withTempDir(async (root) => {
+      const binDir = path.join(root, "bin");
+      await fs.mkdir(binDir, { recursive: true });
+
+      await writeExecutable(
+        path.join(binDir, "codex"),
+        `#!/usr/bin/env bun
+const lines = [
+  JSON.stringify({ type: "thread.started", thread_id: "thread-1" }),
+  JSON.stringify({ type: "item.message", role: "assistant", content: "# Plan" })
+];
+for (const line of lines) {
+  process.stdout.write(line + "\\n");
+}
+`,
+      );
+
+      await withPatchedPath(binDir, async () => {
+        const adapter = new CodexCLISyncAdapter({
+          id: "codex",
+          type: "codex",
+          model: "codex-5.2",
+          codex: {
+            mcp: { servers: [{ name: "test", command: ["npx", "server"] }] },
+          },
+        });
+        const outputFile = path.join(root, "plan.md");
+        const logFile = path.join(root, "codex.log");
+        const sessionFile = path.join(root, "codex-session.txt");
+        await fs.writeFile(outputFile, "# Old Plan", "utf8");
+
+        const [success] = await adapter.runSync({
+          worktree: root,
+          prompt: "test",
+          outputFile,
+          logFile,
+          sessionFile,
+        });
+
+        expect(success).toBe(true);
+
+        const configPath = path.join(path.dirname(sessionFile), "codex.config.json");
+        const configData = JSON.parse(await fs.readFile(configPath, "utf8"));
+        expect(configData).toEqual({
+          mcp: { servers: [{ name: "test", command: ["npx", "server"] }] },
+        });
+      });
     });
   });
 
@@ -397,7 +446,7 @@ process.stdout.write(payload);
           id: "opus",
           type: "claude",
           model: "opus",
-          allowedTools: ["Read"],
+          claude: { allowedTools: ["Read"] },
         });
         const outputFile = path.join(root, "plan.md");
         const logFile = path.join(root, "claude.log");
@@ -442,7 +491,7 @@ for (const line of lines) {
           id: "codex",
           type: "codex",
           model: "codex-5.2",
-          sandbox: "read-only",
+          codex: { sandbox: "read-only" },
         });
         const outputFile = path.join(root, "plan.md");
         const logFile = path.join(root, "codex.log");

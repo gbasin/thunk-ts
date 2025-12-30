@@ -130,11 +130,15 @@ When you edit `turns/001.md` and call `continue`, agents receive your changes as
 Edit `.thunk/thunk.yaml` (or `.thunk/thunk.yml`) to configure agents:
 
 ```yaml
-allowed_tools:
-  - Read
-  - Edit
-  - Write
+claude:
+  allowed_tools:
+    - Read
+    - Edit
+    - Write
   # See .thunk/thunk.yaml for the full default list
+codex:
+  full_auto: true
+  search: true
 agents:
   - id: opus
     type: claude
@@ -144,8 +148,6 @@ agents:
     type: codex
     model: codex-5.2
     thinking: xmax
-    full_auto: true
-    search: true
     enabled: true
 synthesizer:
   id: synthesizer
@@ -157,11 +159,12 @@ synthesizer:
 
 If the file is missing, defaults are used. `--timeout` overrides the config.
 For Codex agents, `thinking` maps to the `--thinking` CLI flag.
-Codex constraints map to `full_auto`, `sandbox`, `approval_policy`, `dangerously_bypass`, `add_dir`,
-`config_overrides`, and `search`.
-For Claude agents, `allowed_tools` maps to `--allowedTools`.
-Claude's allowlist is best-effort; shell commands can still write if they redirect output.
-Override `allowed_tools` per agent by setting `allowed_tools` on that agent entry.
+Codex constraints live under `codex` (defaults) or `agents[].codex` (overrides), with keys:
+`full_auto`, `sandbox`, `approval_policy`, `dangerously_bypass`, `add_dir`, `search`, `config`, and `mcp`.
+`config` and `mcp` are serialized to JSON and passed via `--config`.
+For Claude agents, `claude.allowed_tools` maps to `--allowedTools`, and `claude.add_dir` maps to
+`--add-dir`. Claude's allowlist is best-effort; shell commands can still write if they redirect
+output. Override defaults per agent with `agents[].claude` or `agents[].codex`.
 If you pass `--thunk-dir`, the config is loaded from that directory.
 
 ## Architecture

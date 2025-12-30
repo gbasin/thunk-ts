@@ -44,11 +44,55 @@ async function writeThreadId(
   await fs.rename(tempFile, sessionFile);
 }
 
+function resolveCodexConfigPath(params: {
+  sessionFile?: string;
+  logFile?: string;
+  outputFile?: string;
+  worktree?: string;
+}): string {
+  const baseDir = params.sessionFile
+    ? path.dirname(params.sessionFile)
+    : params.logFile
+      ? path.dirname(params.logFile)
+      : params.outputFile
+        ? path.dirname(params.outputFile)
+        : (params.worktree ?? ".");
+  return path.join(baseDir, "codex.config.json");
+}
+
+function buildCodexConfigData(codexConfig: AgentConfig["codex"]): Record<string, unknown> | null {
+  if (!codexConfig) {
+    return null;
+  }
+  const data: Record<string, unknown> = codexConfig.config ? { ...codexConfig.config } : {};
+  if (codexConfig.mcp !== undefined) {
+    if ("mcp" in data) {
+      throw new Error("codex.mcp conflicts with codex.config.mcp");
+    }
+    data.mcp = codexConfig.mcp;
+  }
+  return Object.keys(data).length > 0 ? data : null;
+}
+
+function writeCodexConfigFileSync(configPath: string, data: Record<string, unknown>): void {
+  fsSync.mkdirSync(path.dirname(configPath), { recursive: true });
+  fsSync.writeFileSync(configPath, JSON.stringify(data, null, 2), "utf8");
+}
+
+async function writeCodexConfigFile(
+  configPath: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  await fs.mkdir(path.dirname(configPath), { recursive: true });
+  await fs.writeFile(configPath, JSON.stringify(data, null, 2), "utf8");
+}
+
 function buildCmd(
   config: AgentConfig,
   prompt: string,
   threadId?: string | null,
   projectRoot?: string | null,
+  codexConfigPath?: string | null,
 ): string[] {
   const cmd = ["codex", "exec", "--json"];
   if (config.model) {
@@ -57,36 +101,37 @@ function buildCmd(
   if (config.thinking) {
     cmd.push("--thinking", config.thinking);
   }
-  if (config.configOverrides) {
-    for (const override of config.configOverrides) {
-      cmd.push("--config", override);
-    }
+  if (codexConfigPath) {
+    cmd.push("--config", codexConfigPath);
   }
-  if (config.search) {
+
+  const codexConfig = config.codex;
+
+  if (codexConfig?.search) {
     cmd.push("--search");
   }
 
-  if (config.dangerouslyBypass) {
+  if (codexConfig?.dangerouslyBypass) {
     cmd.push("--dangerously-bypass-approvals-and-sandbox");
   } else {
-    const hasSandboxConfig = Boolean(config.sandbox || config.approvalPolicy);
-    const fullAuto = config.fullAuto ?? true;
+    const hasSandboxConfig = Boolean(codexConfig?.sandbox || codexConfig?.approvalPolicy);
+    const fullAuto = codexConfig?.fullAuto ?? true;
     if (fullAuto && !hasSandboxConfig) {
       cmd.push("--full-auto");
     }
-    if (config.sandbox) {
-      cmd.push("--sandbox", config.sandbox);
+    if (codexConfig?.sandbox) {
+      cmd.push("--sandbox", codexConfig.sandbox);
     }
-    if (config.approvalPolicy) {
-      cmd.push("--ask-for-approval", config.approvalPolicy);
+    if (codexConfig?.approvalPolicy) {
+      cmd.push("--ask-for-approval", codexConfig.approvalPolicy);
     }
   }
 
   if (projectRoot) {
     cmd.push("--add-dir", projectRoot);
   }
-  if (config.addDir) {
-    for (const dir of config.addDir) {
+  if (codexConfig?.addDir) {
+    for (const dir of codexConfig.addDir) {
       cmd.push("--add-dir", dir);
     }
   }
@@ -126,10 +171,11 @@ function parseCodexOutput(stdout: string): { threadId: string | null; finalOutpu
 }
 
 function shouldPreferOutput(config: AgentConfig): boolean {
-  if (config.dangerouslyBypass) {
+  const codexConfig = config.codex;
+  if (codexConfig?.dangerouslyBypass) {
     return false;
   }
-  return config.sandbox === "read-only";
+  return codexConfig?.sandbox === "read-only";
 }
 
 async function streamToLog(params: {
@@ -181,9 +227,16 @@ export class CodexCLIAdapter extends AgentAdapter {
     logFile: string;
     sessionFile?: string;
   }): AgentHandle {
-    const { worktree, prompt, logFile, sessionFile } = params;
+    const { worktree, prompt, logFile, sessionFile, outputFile } = params;
     const threadId = readThreadIdSync(sessionFile);
-    const cmd = buildCmd(this.config, prompt, threadId, worktree);
+    const codexConfig = buildCodexConfigData(this.config.codex);
+    const codexConfigPath = codexConfig
+      ? resolveCodexConfigPath({ sessionFile, logFile, outputFile, worktree })
+      : null;
+    if (codexConfig && codexConfigPath) {
+      writeCodexConfigFileSync(codexConfigPath, codexConfig);
+    }
+    const cmd = buildCmd(this.config, prompt, threadId, worktree, codexConfigPath);
     const proc = Bun.spawn({
       cmd,
       cwd: worktree,
@@ -208,9 +261,16 @@ export class CodexCLISyncAdapter extends AgentAdapter {
     logFile: string;
     sessionFile?: string;
   }): AgentHandle {
-    const { worktree, prompt, logFile, sessionFile } = params;
+    const { worktree, prompt, logFile, sessionFile, outputFile } = params;
     const threadId = readThreadIdSync(sessionFile);
-    const cmd = buildCmd(this.config, prompt, threadId, worktree);
+    const codexConfig = buildCodexConfigData(this.config.codex);
+    const codexConfigPath = codexConfig
+      ? resolveCodexConfigPath({ sessionFile, logFile, outputFile, worktree })
+      : null;
+    if (codexConfig && codexConfigPath) {
+      writeCodexConfigFileSync(codexConfigPath, codexConfig);
+    }
+    const cmd = buildCmd(this.config, prompt, threadId, worktree, codexConfigPath);
     const proc = Bun.spawn({
       cmd,
       cwd: worktree,
@@ -232,7 +292,19 @@ export class CodexCLISyncAdapter extends AgentAdapter {
     appendLog?: boolean;
   }): Promise<[boolean, string]> {
     const threadId = await readThreadId(params.sessionFile);
-    const cmd = buildCmd(this.config, params.prompt, threadId, params.worktree);
+    const codexConfig = buildCodexConfigData(this.config.codex);
+    const codexConfigPath = codexConfig
+      ? resolveCodexConfigPath({
+          sessionFile: params.sessionFile,
+          logFile: params.logFile,
+          outputFile: params.outputFile,
+          worktree: params.worktree,
+        })
+      : null;
+    if (codexConfig && codexConfigPath) {
+      await writeCodexConfigFile(codexConfigPath, codexConfig);
+    }
+    const cmd = buildCmd(this.config, params.prompt, threadId, params.worktree, codexConfigPath);
 
     const proc = Bun.spawn({
       cmd,

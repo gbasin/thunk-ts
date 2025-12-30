@@ -78,13 +78,14 @@ describe("ThunkConfig", () => {
     const config = ThunkConfig.default();
     expect(config.agents.length).toBe(2);
     expect(config.agents[0].id).toBe("opus");
+    expect(config.agents[0].claude?.allowedTools).toContain("Read");
     expect(config.agents[1].id).toBe("codex");
     expect(config.agents[1].model).toBe("codex-5.2");
     expect(config.agents[1].thinking).toBe("xmax");
-    expect(config.agents[1].sandbox).toBeUndefined();
-    expect(config.agents[1].approvalPolicy).toBeUndefined();
-    expect(config.agents[1].fullAuto).toBe(true);
-    expect(config.agents[1].search).toBe(true);
+    expect(config.agents[1].codex?.sandbox).toBeUndefined();
+    expect(config.agents[1].codex?.approvalPolicy).toBeUndefined();
+    expect(config.agents[1].codex?.fullAuto).toBe(true);
+    expect(config.agents[1].codex?.search).toBe(true);
     expect(config.synthesizer.id).toBe("synthesizer");
     expect(config.timeout).toBeUndefined();
   });
@@ -95,28 +96,38 @@ describe("ThunkConfig", () => {
     try {
       await fs.mkdir(thunkDir, { recursive: true });
       const yaml = [
-        "allowed_tools:",
-        "  - Read",
-        "  - Write",
+        "claude:",
+        "  allowed_tools:",
+        "    - Read",
+        "    - Write",
+        "codex:",
+        "  full_auto: false",
+        "  sandbox: read-only",
+        "  approval_policy: untrusted",
+        "  dangerously_bypass: false",
+        "  search: true",
+        "  add_dir:",
+        "    - extra-dir",
+        "  config:",
+        "    sandbox_permissions:",
+        "      - disk-full-read-access",
+        "  mcp:",
+        "    servers:",
+        "      - name: default",
+        "        command:",
+        "          - npx",
+        "          - server",
         "agents:",
         "  - id: alpha",
         "    type: claude",
         "    model: opus",
-        "    allowed_tools:",
-        "      - Read",
+        "    claude:",
+        "      allowed_tools:",
+        "        - Read",
         "  - id: beta",
         "    type: codex",
         "    model: codex-5.2",
         "    thinking: xmax",
-        "    full_auto: false",
-        "    sandbox: read-only",
-        "    approval_policy: untrusted",
-        "    dangerously_bypass: false",
-        "    search: true",
-        "    add_dir:",
-        "      - extra-dir",
-        "    config_overrides:",
-        "      - 'sandbox_permissions=[\"disk-full-read-access\"]'",
         "    enabled: false",
         "synthesizer:",
         "  id: synth",
@@ -133,7 +144,7 @@ describe("ThunkConfig", () => {
         id: "alpha",
         type: "claude",
         model: "opus",
-        allowedTools: ["Read"],
+        claude: { allowedTools: ["Read"] },
         enabled: true,
       });
       expect(config.agents[1]).toEqual({
@@ -141,21 +152,25 @@ describe("ThunkConfig", () => {
         type: "codex",
         model: "codex-5.2",
         thinking: "xmax",
-        fullAuto: false,
-        sandbox: "read-only",
-        approvalPolicy: "untrusted",
-        dangerouslyBypass: false,
-        addDir: ["extra-dir"],
-        configOverrides: ['sandbox_permissions=["disk-full-read-access"]'],
-        search: true,
-        allowedTools: ["Read", "Write"],
+        codex: {
+          fullAuto: false,
+          sandbox: "read-only",
+          approvalPolicy: "untrusted",
+          dangerouslyBypass: false,
+          addDir: ["extra-dir"],
+          search: true,
+          config: { sandbox_permissions: ["disk-full-read-access"] },
+          mcp: {
+            servers: [{ name: "default", command: ["npx", "server"] }],
+          },
+        },
         enabled: false,
       });
       expect(config.synthesizer).toEqual({
         id: "synth",
         type: "claude",
         model: "opus",
-        allowedTools: ["Read", "Write"],
+        claude: { allowedTools: ["Read", "Write"] },
         enabled: true,
       });
       expect(config.timeout).toBe(120);
