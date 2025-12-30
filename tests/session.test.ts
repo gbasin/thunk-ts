@@ -105,4 +105,21 @@ describe("SessionManager", () => {
       expect(await manager.hasQuestions(state.sessionId)).toBe(false);
     });
   });
+
+  it("treats next-line answers as answered", async () => {
+    await withTempDir(async (root) => {
+      const manager = new SessionManager(path.join(root, ".thunk"));
+      const state = await manager.createSession("Test task");
+      const paths = manager.getPaths(state.sessionId);
+
+      await fs.mkdir(path.dirname(paths.turnFile(1)), { recursive: true });
+      await fs.writeFile(
+        paths.turnFile(1),
+        "## Questions\n\n### Q1: What database?\n**Context:** Need to choose\n**Answer:**\nPostgreSQL\n\n## Summary\nUse PostgreSQL\n",
+        "utf8",
+      );
+
+      expect(await manager.hasQuestions(state.sessionId)).toBe(false);
+    });
+  });
 });

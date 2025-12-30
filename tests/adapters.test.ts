@@ -20,6 +20,26 @@ async function writeExecutable(filePath: string, content: string) {
   await fs.chmod(filePath, 0o755);
 }
 
+async function withPatchedPath(binDir: string, fn: () => Promise<void>) {
+  const originalPath = process.env.PATH || "";
+  const bunDir = path.dirname(process.execPath);
+  process.env.PATH = `${binDir}${path.delimiter}${bunDir}${path.delimiter}${originalPath}`;
+  try {
+    await fn();
+  } finally {
+    process.env.PATH = originalPath;
+  }
+}
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 describe("Adapters", () => {
   it("Claude adapter streams output and persists session id", async () => {
     await withTempDir(async (root) => {
@@ -41,43 +61,39 @@ process.stdout.write(payload.slice(mid));
 `,
       );
 
-      const originalPath = process.env.PATH || "";
-      const bunDir = path.dirname(process.execPath);
-      process.env.PATH = `${binDir}${path.delimiter}${bunDir}${path.delimiter}${originalPath}`;
+      await withPatchedPath(binDir, async () => {
+        const adapter = new ClaudeCodeSyncAdapter({ id: "opus", type: "claude", model: "opus" });
+        const outputFile = path.join(root, "output.md");
+        const logFile = path.join(root, "claude.log");
+        const sessionFile = path.join(root, "claude-session.txt");
 
-      const adapter = new ClaudeCodeSyncAdapter({ id: "opus", type: "claude", model: "opus" });
-      const outputFile = path.join(root, "output.md");
-      const logFile = path.join(root, "claude.log");
-      const sessionFile = path.join(root, "claude-session.txt");
+        const [success, output] = await adapter.runSync({
+          worktree: root,
+          prompt: "test",
+          outputFile,
+          logFile,
+          sessionFile,
+        });
 
-      const [success, output] = await adapter.runSync({
-        worktree: root,
-        prompt: "test",
-        outputFile,
-        logFile,
-        sessionFile,
+        expect(success).toBe(true);
+        expect(output).toContain("# Plan from Claude");
+        expect(await fs.readFile(sessionFile, "utf8")).toBe("sess-start");
+
+        const [success2] = await adapter.runSync({
+          worktree: root,
+          prompt: "test",
+          outputFile,
+          logFile,
+          sessionFile,
+          appendLog: true,
+        });
+
+        expect(success2).toBe(true);
+        expect(await fs.readFile(sessionFile, "utf8")).toBe("sess-resume");
+
+        const logContent = await fs.readFile(logFile, "utf8");
+        expect(logContent.length).toBeGreaterThan(0);
       });
-
-      expect(success).toBe(true);
-      expect(output).toContain("# Plan from Claude");
-      expect(await fs.readFile(sessionFile, "utf8")).toBe("sess-start");
-
-      const [success2] = await adapter.runSync({
-        worktree: root,
-        prompt: "test",
-        outputFile,
-        logFile,
-        sessionFile,
-        appendLog: true,
-      });
-
-      expect(success2).toBe(true);
-      expect(await fs.readFile(sessionFile, "utf8")).toBe("sess-resume");
-
-      const logContent = await fs.readFile(logFile, "utf8");
-      expect(logContent.length).toBeGreaterThan(0);
-
-      process.env.PATH = originalPath;
     });
   });
 
@@ -103,43 +119,171 @@ for (const line of lines) {
 `,
       );
 
-      const originalPath = process.env.PATH || "";
-      const bunDir = path.dirname(process.execPath);
-      process.env.PATH = `${binDir}${path.delimiter}${bunDir}${path.delimiter}${originalPath}`;
+      await withPatchedPath(binDir, async () => {
+        const adapter = new CodexCLISyncAdapter({ id: "codex", type: "codex", model: "codex" });
+        const outputFile = path.join(root, "codex-output.md");
+        const logFile = path.join(root, "codex.log");
+        const sessionFile = path.join(root, "codex-session.txt");
 
-      const adapter = new CodexCLISyncAdapter({ id: "codex", type: "codex", model: "codex" });
-      const outputFile = path.join(root, "codex-output.md");
-      const logFile = path.join(root, "codex.log");
-      const sessionFile = path.join(root, "codex-session.txt");
+        const [success, output] = await adapter.runSync({
+          worktree: root,
+          prompt: "test",
+          outputFile,
+          logFile,
+          sessionFile,
+        });
 
-      const [success, output] = await adapter.runSync({
-        worktree: root,
-        prompt: "test",
-        outputFile,
-        logFile,
-        sessionFile,
+        expect(success).toBe(true);
+        expect(output).toContain("Final output");
+        expect(await fs.readFile(sessionFile, "utf8")).toBe("thread-start");
+
+        const [success2] = await adapter.runSync({
+          worktree: root,
+          prompt: "test",
+          outputFile,
+          logFile,
+          sessionFile,
+          appendLog: true,
+        });
+
+        expect(success2).toBe(true);
+        expect(await fs.readFile(sessionFile, "utf8")).toBe("thread-resume");
+
+        const logContent = await fs.readFile(logFile, "utf8");
+        expect(logContent.length).toBeGreaterThan(0);
       });
+    });
+  });
 
-      expect(success).toBe(true);
-      expect(output).toContain("Final output");
-      expect(await fs.readFile(sessionFile, "utf8")).toBe("thread-start");
+  it("Claude adapter falls back to raw output on invalid JSON", async () => {
+    await withTempDir(async (root) => {
+      const binDir = path.join(root, "bin");
+      await fs.mkdir(binDir, { recursive: true });
 
-      const [success2] = await adapter.runSync({
-        worktree: root,
-        prompt: "test",
-        outputFile,
-        logFile,
-        sessionFile,
-        appendLog: true,
+      await writeExecutable(
+        path.join(binDir, "claude"),
+        `#!/usr/bin/env bun
+process.stdout.write("plain output");
+`,
+      );
+
+      await withPatchedPath(binDir, async () => {
+        const adapter = new ClaudeCodeSyncAdapter({ id: "opus", type: "claude", model: "opus" });
+        const outputFile = path.join(root, "raw.md");
+        const logFile = path.join(root, "claude.log");
+        const sessionFile = path.join(root, "claude-session.txt");
+
+        const [success, output] = await adapter.runSync({
+          worktree: root,
+          prompt: "test",
+          outputFile,
+          logFile,
+          sessionFile,
+        });
+
+        expect(success).toBe(true);
+        expect(output).toBe("plain output");
+        expect(await fs.readFile(outputFile, "utf8")).toBe("plain output");
+        expect(await fileExists(sessionFile)).toBe(false);
       });
+    });
+  });
 
-      expect(success2).toBe(true);
-      expect(await fs.readFile(sessionFile, "utf8")).toBe("thread-resume");
+  it("Codex adapter falls back to raw output on invalid JSON", async () => {
+    await withTempDir(async (root) => {
+      const binDir = path.join(root, "bin");
+      await fs.mkdir(binDir, { recursive: true });
 
-      const logContent = await fs.readFile(logFile, "utf8");
-      expect(logContent.length).toBeGreaterThan(0);
+      await writeExecutable(
+        path.join(binDir, "codex"),
+        `#!/usr/bin/env bun
+process.stdout.write("raw codex output");
+`,
+      );
 
-      process.env.PATH = originalPath;
+      await withPatchedPath(binDir, async () => {
+        const adapter = new CodexCLISyncAdapter({ id: "codex", type: "codex", model: "codex" });
+        const outputFile = path.join(root, "codex-raw.md");
+        const logFile = path.join(root, "codex.log");
+        const sessionFile = path.join(root, "codex-session.txt");
+
+        const [success, output] = await adapter.runSync({
+          worktree: root,
+          prompt: "test",
+          outputFile,
+          logFile,
+          sessionFile,
+        });
+
+        expect(success).toBe(true);
+        expect(output).toBe("raw codex output");
+        expect(await fs.readFile(outputFile, "utf8")).toBe("raw codex output");
+        expect(await fileExists(sessionFile)).toBe(false);
+      });
+    });
+  });
+
+  it("Claude adapter reports timeout", async () => {
+    await withTempDir(async (root) => {
+      const binDir = path.join(root, "bin");
+      await fs.mkdir(binDir, { recursive: true });
+
+      await writeExecutable(
+        path.join(binDir, "claude"),
+        `#!/usr/bin/env bun
+await new Promise((r) => setTimeout(r, 200));
+process.stdout.write("late output");
+`,
+      );
+
+      await withPatchedPath(binDir, async () => {
+        const adapter = new ClaudeCodeSyncAdapter({ id: "opus", type: "claude", model: "opus" });
+        const outputFile = path.join(root, "timeout.md");
+        const logFile = path.join(root, "claude.log");
+
+        const [success, output] = await adapter.runSync({
+          worktree: root,
+          prompt: "test",
+          outputFile,
+          logFile,
+          timeout: 0.05,
+        });
+
+        expect(success).toBe(false);
+        expect(output).toBe("Timeout expired");
+      });
+    });
+  });
+
+  it("Codex adapter reports timeout", async () => {
+    await withTempDir(async (root) => {
+      const binDir = path.join(root, "bin");
+      await fs.mkdir(binDir, { recursive: true });
+
+      await writeExecutable(
+        path.join(binDir, "codex"),
+        `#!/usr/bin/env bun
+await new Promise((r) => setTimeout(r, 200));
+process.stdout.write("late output");
+`,
+      );
+
+      await withPatchedPath(binDir, async () => {
+        const adapter = new CodexCLISyncAdapter({ id: "codex", type: "codex", model: "codex" });
+        const outputFile = path.join(root, "timeout.md");
+        const logFile = path.join(root, "codex.log");
+
+        const [success, output] = await adapter.runSync({
+          worktree: root,
+          prompt: "test",
+          outputFile,
+          logFile,
+          timeout: 0.05,
+        });
+
+        expect(success).toBe(false);
+        expect(output).toBe("Timeout expired");
+      });
     });
   });
 });

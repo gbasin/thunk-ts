@@ -18,12 +18,6 @@ bun run typecheck  # tsc --noEmit
 bun run test       # bun test
 bun run build      # bun build
 
-## Coding Standards
-
-- TypeScript, strict type checking
-- Biome for formatting, oxlint for linting
-- 100% test coverage
-
 ## Git Rules
 
 - Check `git status`/`git diff` before commits
