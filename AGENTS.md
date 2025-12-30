@@ -39,9 +39,29 @@ bun run build      # bun build
 
 ## Engineering
 
-- Small files (<500 LOC), descriptive paths
+- Small files (<500 LOC), descriptive paths, current header comments (agents navigate via filesystem and read line-by-line)
 - Fix root causes, not symptoms
-- Simplicity > cleverness
+- Simplicity > cleverness (even if it means bigger refactors)
+- 100% test coverage (forces edge-case thinking)
+
+## Project Overview
+
+Thunk is a multi-agent ensemble planning CLI. It orchestrates multiple AI agents
+(Claude Code, OpenAI Codex) to collaboratively create implementation plans for
+tasks, with human-in-the-loop review.
+
+See `README.md` for full documentation.
+
+## Commands
+
+thunk init "task description"        # Start planning session
+thunk wait --session <id>            # Block until turn complete
+thunk continue --session <id>        # Start next turn after user edits
+thunk approve --session <id>         # Lock plan as final
+thunk status --session <id>          # Check progress
+thunk list                           # List all sessions
+thunk clean --session <id>           # Remove session
+thunk diff --session <id>            # Show changes between turns
 
 ## Architecture
 
@@ -54,5 +74,27 @@ src/
 ├── names.ts        # Human-friendly name generator
 └── adapters/
     ├── base.ts     # AgentAdapter interface
-    ├── claude.ts   # Claude Code adapter (subprocess, --resume)
-    └── codex.ts    # Codex CLI adapter (subprocess, resume)
+    ├── claude.ts   # Claude Code adapter (with session continuation)
+    └── codex.ts    # Codex CLI adapter (with session continuation)
+
+## Session File Structure
+
+.thunk/sessions/swift-river/      # Human-friendly session ID
+├── meta.yaml                     # Task description, timestamp
+├── state.yaml                    # Turn, phase, agent_plan_ids mapping
+├── sunny-glade.md                # Agent's persistent plan (plan_id)
+├── amber-marsh.md                # Another agent's plan
+├── turns/
+│   ├── 001.md                    # Turn 1 synthesis (user edits this)
+│   ├── 001.snapshot.md           # Pre-edit snapshot (for diffing)
+│   ├── 001/                      # Debug snapshots
+│   │   ├── sunny-glade-draft.md
+│   │   └── sunny-glade-reviewed.md
+│   └── ...
+├── agents/
+│   ├── sunny-glade.log           # Session-wide debug log (appended)
+│   ├── sunny-glade/
+│   │   └── cli_session_id.txt    # For --resume
+│   ├── amber-marsh.log
+│   └── synthesizer.log
+└── PLAN.md                       # Symlink to approved turn

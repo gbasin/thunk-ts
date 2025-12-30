@@ -121,6 +121,30 @@ When you edit `turns/001.md` and call `continue`, agents receive your changes as
 - After synthesis, all agent plan files are synced to the canonical state
 - Debug logs span the entire session (appended each turn)
 
+## Configuration
+
+Default agents (in code):
+- **opus**: Claude Code with Opus 4.5
+- **codex**: OpenAI Codex CLI
+
+Both run from the project root with full read access and limited tool permissions for safe exploration.
+
+## Architecture
+
+```
+src/
+├── cli.ts          # CLI commands (sade)
+├── models.ts       # Data models (SessionState, Phase, AgentConfig)
+├── session.ts      # Session lifecycle management
+├── orchestrator.ts # Turn orchestration (draft -> peer review -> synthesis)
+├── prompts.ts      # Agent prompt templates
+├── names.ts        # Human-friendly name generator
+└── adapters/
+    ├── base.ts     # AgentAdapter interface
+    ├── claude.ts   # Claude Code adapter (subprocess, --resume)
+    └── codex.ts    # Codex CLI adapter (subprocess, resume)
+```
+
 ## Development
 
 ```bash
