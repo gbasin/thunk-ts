@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "Multi-agent ensemble planning CLI (Bun + TypeScript)",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "plugins": [
     {
       "name": "thunk",
       "source": "./plugin",
       "description": "Orchestrate Claude Code and Codex to collaboratively create implementation plans with human-in-the-loop review",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "author": {
         "name": "Gary Basin"
       },
