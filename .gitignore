@@ -1,0 +1,7 @@
+node_modules/
+.bun/
+.dist/
+dist/
+.DS_Store
+.env
+coverage/

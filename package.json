@@ -1,0 +1,33 @@
+{
+  "name": "thunk",
+  "version": "0.1.0",
+  "description": "Multi-agent ensemble planning CLI (Bun + TypeScript)",
+  "type": "module",
+  "bin": {
+    "thunk": "src/index.ts"
+  },
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint src tests",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "test": "bun test",
+    "quality": "bun run lint && bun run typecheck && bun run test && bun run build"
+  },
+  "dependencies": {
+    "diff": "^5.2.0",
+    "js-yaml": "^4.1.0",
+    "sade": "^1.8.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "bun-types": "^1.1.25",
+    "oxlint": "^0.13.0",
+    "typescript": "^5.5.4"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  }
+}

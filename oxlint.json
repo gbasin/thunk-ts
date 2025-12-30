@@ -1,0 +1,6 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/crates/oxlint/schema.json",
+  "rules": {
+    "no-debugger": "error"
+  }
+}
