@@ -357,4 +357,69 @@ for (const line of lines) {
       expect(data.error).toContain("Turn files not found");
     });
   });
+
+  it("init reads task from --file", async () => {
+    await withTempDir(async (root) => {
+      const repoRoot = path.resolve(import.meta.dir, "..");
+      const thunkDir = path.join(root, ".thunk-test");
+      const taskFile = path.join(root, "task.md");
+
+      const longTask = `# Feature Request
+
+This is a very long task description that would be difficult to pass
+as a command line argument due to shell escaping and length limits.
+
+## Requirements
+- Support large text input
+- Handle special characters like "quotes" and $variables
+- Preserve newlines and formatting
+
+## Q&A
+Q: Should this work with stdin?
+A: Yes, use --file - for stdin
+`;
+
+      await fs.writeFile(taskFile, longTask, "utf8");
+
+      const result = runCli(["--thunk-dir", thunkDir, "init", "--file", taskFile], repoRoot);
+
+      expect(result.exitCode).toBe(0);
+      const data = JSON.parse(result.stdout);
+      expect(data.session_id).toBeDefined();
+
+      const manager = new SessionManager(thunkDir);
+      const state = await manager.loadSession(data.session_id);
+      expect(state?.task).toContain("Feature Request");
+      expect(state?.task).toContain("Q&A");
+    });
+  });
+
+  it("init errors when no task and no --file", async () => {
+    await withTempDir(async (root) => {
+      const repoRoot = path.resolve(import.meta.dir, "..");
+      const thunkDir = path.join(root, ".thunk-test");
+
+      const result = runCli(["--thunk-dir", thunkDir, "init"], repoRoot);
+
+      expect(result.exitCode).toBe(1);
+      const data = JSON.parse(result.stdout);
+      expect(data.error).toContain("Missing task description");
+    });
+  });
+
+  it("init errors when --file does not exist", async () => {
+    await withTempDir(async (root) => {
+      const repoRoot = path.resolve(import.meta.dir, "..");
+      const thunkDir = path.join(root, ".thunk-test");
+
+      const result = runCli(
+        ["--thunk-dir", thunkDir, "init", "--file", "/nonexistent/task.md"],
+        repoRoot,
+      );
+
+      expect(result.exitCode).toBe(1);
+      const data = JSON.parse(result.stdout);
+      expect(data.error).toContain("Cannot read task file");
+    });
+  });
 });

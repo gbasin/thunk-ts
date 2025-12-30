@@ -19,7 +19,8 @@ Thunk orchestrates multiple AI agents (Claude Code + OpenAI Codex) to create imp
 
 | Command | Purpose |
 |---------|---------|
-| `thunk init "task"` | Start new planning session |
+| `thunk init "task"` | Start new planning session (short description) |
+| `thunk init --file spec.md` | Start session from file (for large specs) |
 | `thunk wait --session <id>` | Block until turn complete |
 | `thunk status --session <id>` | Check progress |
 | `thunk continue --session <id>` | Start next turn after edits |
@@ -27,6 +28,16 @@ Thunk orchestrates multiple AI agents (Claude Code + OpenAI Codex) to create imp
 | `thunk list` | List all sessions |
 | `thunk clean --session <id>` | Remove session |
 | `thunk diff --session <id>` | Show changes between turns |
+
+## Slash Commands
+
+| Command | Purpose |
+|---------|---------|
+| `/thunk:plan` | Interactive planning - choose interview, spec file, or paste |
+| `/thunk:continue <id>` | Continue after editing turn file |
+| `/thunk:approve <id>` | Lock plan as final |
+| `/thunk:status <id>` | Check session status |
+| `/thunk:list` | List all sessions |
 
 ## Workflow
 

@@ -102,14 +102,44 @@ export function runCli(argv = process.argv): void {
     .option("--pretty", "Pretty print JSON output");
 
   prog
-    .command("init <task>")
+    .command("init [task]")
     .describe("Start a new planning session")
-    .action(async (task: string, opts: Record<string, unknown>) => {
+    .option("--file, -f", "Read task description from file (use - for stdin)")
+    .action(async (task: string | undefined, opts: Record<string, unknown>) => {
       const manager = new SessionManager(resolveThunkDir(opts, globalOptions.thunkDir));
       const pretty = resolvePretty(opts, globalOptions.pretty);
       const config = await loadConfig(pretty, manager.thunkDir);
 
-      const state = await manager.createSession(task, config);
+      const filePath = (opts.file ?? opts.f) as string | undefined;
+      let taskDescription: string;
+
+      if (filePath) {
+        if (filePath === "-") {
+          // Read from stdin
+          const chunks: Buffer[] = [];
+          for await (const chunk of process.stdin) {
+            chunks.push(chunk as Buffer);
+          }
+          taskDescription = Buffer.concat(chunks).toString("utf8").trim();
+        } else {
+          // Read from file
+          try {
+            taskDescription = (await fs.readFile(filePath, "utf8")).trim();
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "Failed to read file";
+            exitWithError({ error: `Cannot read task file: ${message}` }, pretty);
+          }
+        }
+      } else if (task) {
+        taskDescription = task;
+      } else {
+        exitWithError(
+          { error: "Missing task description. Provide as argument or use --file" },
+          pretty,
+        );
+      }
+
+      const state = await manager.createSession(taskDescription, config);
       state.phase = Phase.Drafting;
       await manager.saveState(state);
 
