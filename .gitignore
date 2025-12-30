@@ -2,7 +2,6 @@ node_modules/
 .bun/
 .dist/
 dist/
-.thunk/
 .thunk-test/
 .DS_Store
 .env
