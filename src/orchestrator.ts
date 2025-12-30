@@ -45,7 +45,7 @@ export class TurnOrchestrator {
     this.adapters = {};
 
     for (const agentConfig of config.agents) {
-      if (!agentConfig.enabled) {
+      if (agentConfig.enabled === false) {
         continue;
       }
       if (agentConfig.type === "claude") {

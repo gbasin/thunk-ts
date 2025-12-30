@@ -3,6 +3,7 @@ node_modules/
 .dist/
 dist/
 .thunk-test/
+.thunk/sessions/
 .DS_Store
 .env
 coverage/

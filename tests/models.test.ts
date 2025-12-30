@@ -1,3 +1,5 @@
+import { promises as fs } from "fs";
+import os from "os";
 import path from "path";
 import { describe, expect, it } from "bun:test";
 
@@ -77,7 +79,101 @@ describe("ThunkConfig", () => {
     expect(config.agents.length).toBe(2);
     expect(config.agents[0].id).toBe("opus");
     expect(config.agents[1].id).toBe("codex");
+    expect(config.agents[1].model).toBe("codex-5.2");
+    expect(config.agents[1].thinking).toBe("xmax");
     expect(config.synthesizer.id).toBe("synthesizer");
     expect(config.timeout).toBeUndefined();
+  });
+
+  it("loads config from yaml", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "thunk-config-"));
+    const thunkDir = path.join(root, ".thunk");
+    try {
+      await fs.mkdir(thunkDir, { recursive: true });
+      const yaml = [
+        "allowed_tools:",
+        "  - Read",
+        "  - Write",
+        "agents:",
+        "  - id: alpha",
+        "    type: claude",
+        "    model: opus",
+        "    allowed_tools:",
+        "      - Read",
+        "  - id: beta",
+        "    type: codex",
+        "    model: codex-5.2",
+        "    thinking: xmax",
+        "    enabled: false",
+        "synthesizer:",
+        "  id: synth",
+        "  type: claude",
+        "  model: opus",
+        "timeout: 120",
+        "",
+      ].join("\n");
+      await fs.writeFile(path.join(thunkDir, "thunk.yaml"), yaml, "utf8");
+
+      const config = await ThunkConfig.loadFromThunkDir(thunkDir);
+      expect(config.agents.length).toBe(2);
+      expect(config.agents[0]).toEqual({
+        id: "alpha",
+        type: "claude",
+        model: "opus",
+        allowedTools: ["Read"],
+        enabled: true,
+      });
+      expect(config.agents[1]).toEqual({
+        id: "beta",
+        type: "codex",
+        model: "codex-5.2",
+        thinking: "xmax",
+        allowedTools: ["Read", "Write"],
+        enabled: false,
+      });
+      expect(config.synthesizer).toEqual({
+        id: "synth",
+        type: "claude",
+        model: "opus",
+        allowedTools: ["Read", "Write"],
+        enabled: true,
+      });
+      expect(config.timeout).toBe(120);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back to defaults when config is missing", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "thunk-config-"));
+    try {
+      const config = await ThunkConfig.loadFromThunkDir(path.join(root, ".thunk"));
+      expect(config.agents.length).toBe(2);
+      expect(config.agents[0].id).toBe("opus");
+      expect(config.agents[1].id).toBe("codex");
+      expect(config.synthesizer.id).toBe("synthesizer");
+      expect(config.timeout).toBeUndefined();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects invalid config", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "thunk-config-"));
+    const thunkDir = path.join(root, ".thunk");
+    try {
+      await fs.mkdir(thunkDir, { recursive: true });
+      await fs.writeFile(path.join(thunkDir, "thunk.yaml"), "agents: []\n", "utf8");
+      let error: Error | undefined;
+      try {
+        await ThunkConfig.loadFromThunkDir(thunkDir);
+      } catch (err) {
+        error = err as Error;
+      }
+      expect(error).toBeDefined();
+      expect(error?.message).toContain("agents");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 });

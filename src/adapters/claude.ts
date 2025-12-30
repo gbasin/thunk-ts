@@ -44,7 +44,7 @@ async function writeSessionId(
   await fs.rename(tempFile, sessionFile);
 }
 
-const ALLOWED_TOOLS = [
+const DEFAULT_ALLOWED_TOOLS = [
   "Read",
   "Edit",
   "Write",
@@ -109,7 +109,10 @@ function buildCmd(
 
   if (projectRoot) {
     cmd.push("--add-dir", projectRoot);
-    cmd.push("--allowedTools", ...ALLOWED_TOOLS);
+    const allowedTools = config.allowedTools ?? DEFAULT_ALLOWED_TOOLS;
+    if (allowedTools.length > 0) {
+      cmd.push("--allowedTools", ...allowedTools);
+    }
   }
 
   if (sessionId) {

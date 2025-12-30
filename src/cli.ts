@@ -66,6 +66,15 @@ function exitWithError(data: Record<string, unknown>, pretty: boolean): never {
   process.exit(1);
 }
 
+async function loadConfig(pretty: boolean, thunkDir: string): Promise<ThunkConfig> {
+  try {
+    return await ThunkConfig.loadFromThunkDir(thunkDir);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to load config";
+    exitWithError({ error: message }, pretty);
+  }
+}
+
 export function runCli(argv = process.argv): void {
   const globalOptions = extractGlobalOptions(argv);
   const prog = sade("thunk");
@@ -80,8 +89,9 @@ export function runCli(argv = process.argv): void {
     .action(async (task: string, opts: Record<string, unknown>) => {
       const manager = new SessionManager(resolveThunkDir(opts, globalOptions.thunkDir));
       const pretty = resolvePretty(opts, globalOptions.pretty);
+      const config = await loadConfig(pretty, manager.thunkDir);
 
-      const state = await manager.createSession(task);
+      const state = await manager.createSession(task, config);
       state.phase = Phase.Drafting;
       await manager.saveState(state);
 
@@ -207,7 +217,7 @@ export function runCli(argv = process.argv): void {
         state.phase === Phase.PeerReview ||
         state.phase === Phase.Synthesizing
       ) {
-        const config = ThunkConfig.default();
+        const config = await loadConfig(pretty, manager.thunkDir);
         if (opts.timeout) {
           const timeoutValue = Number(opts.timeout as string);
           if (!Number.isNaN(timeoutValue)) {
@@ -404,7 +414,8 @@ export function runCli(argv = process.argv): void {
         exitWithError({ error: "Need at least 2 turns to show diff" }, pretty);
       }
 
-      const diff = await new TurnOrchestrator(manager, ThunkConfig.default()).getDiff(sessionId);
+      const config = await loadConfig(pretty, manager.thunkDir);
+      const diff = await new TurnOrchestrator(manager, config).getDiff(sessionId);
       if (!diff) {
         exitWithError({ error: "Turn files not found" }, pretty);
       }

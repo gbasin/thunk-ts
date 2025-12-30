@@ -2,8 +2,9 @@ import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
 import { describe, expect, it } from "bun:test";
+import { load } from "js-yaml";
 
-import { Phase } from "../src/models";
+import { Phase, ThunkConfig } from "../src/models";
 import { SessionManager } from "../src/session";
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
@@ -29,6 +30,56 @@ describe("SessionManager", () => {
       const loaded = await manager.loadSession(state.sessionId);
       expect(loaded?.sessionId).toBe(state.sessionId);
       expect(loaded?.task).toBe(state.task);
+    });
+  });
+
+  it("stores config snapshot in meta", async () => {
+    await withTempDir(async (root) => {
+      const manager = new SessionManager(path.join(root, ".thunk-test"));
+      const config = new ThunkConfig({
+        agents: [
+          {
+            id: "alpha",
+            type: "claude",
+            model: "opus",
+            allowedTools: ["Read", "Write"],
+            enabled: true,
+          },
+        ],
+        synthesizer: {
+          id: "synth",
+          type: "claude",
+          model: "opus",
+          allowedTools: ["Read"],
+          enabled: true,
+        },
+        timeout: 90,
+      });
+
+      const state = await manager.createSession("Test task", config);
+      const paths = manager.getPaths(state.sessionId);
+      const metaContent = await fs.readFile(paths.meta, "utf8");
+      const meta = load(metaContent) as { config?: Record<string, unknown> };
+
+      expect(meta.config).toEqual({
+        agents: [
+          {
+            id: "alpha",
+            type: "claude",
+            model: "opus",
+            allowed_tools: ["Read", "Write"],
+            enabled: true,
+          },
+        ],
+        synthesizer: {
+          id: "synth",
+          type: "claude",
+          model: "opus",
+          allowed_tools: ["Read"],
+          enabled: true,
+        },
+        timeout: 90,
+      });
     });
   });
 

@@ -89,30 +89,33 @@ When you edit `turns/001.md` and call `continue`, agents receive your changes as
 ## File Structure
 
 ```
-.thunk/sessions/swift-river/          # Human-friendly session ID
-├── meta.yaml                         # Task description, timestamp
-├── state.yaml                        # Turn, phase, agent_plan_ids mapping
-│
-├── sunny-glade.md                    # Agent's persistent plan (plan_id)
-├── amber-marsh.md                    # Another agent's plan
-│
-├── turns/
-│   ├── 001.md                        # Turn 1 synthesis (USER EDITS THIS)
-│   ├── 001.snapshot.md               # Pre-edit snapshot (for diffing)
-│   ├── 001/                          # Debug snapshots
-│   │   ├── sunny-glade-draft.md
-│   │   └── sunny-glade-reviewed.md
-│   ├── 002.md
-│   └── ...
-│
-├── agents/
-│   ├── sunny-glade.log               # Session-wide debug log (appended)
-│   ├── sunny-glade/
-│   │   └── cli_session_id.txt        # For --resume
-│   ├── amber-marsh.log
-│   └── synthesizer.log
-│
-└── PLAN.md                           # Symlink to approved turn
+.thunk/
+├── thunk.yaml                        # Agent/tool configuration
+└── sessions/
+    └── swift-river/                  # Human-friendly session ID
+        ├── meta.yaml                 # Task description, timestamp
+        ├── state.yaml                # Turn, phase, agent_plan_ids mapping
+        │
+        ├── sunny-glade.md            # Agent's persistent plan (plan_id)
+        ├── amber-marsh.md            # Another agent's plan
+        │
+        ├── turns/
+        │   ├── 001.md                # Turn 1 synthesis (USER EDITS THIS)
+        │   ├── 001.snapshot.md       # Pre-edit snapshot (for diffing)
+        │   ├── 001/                  # Debug snapshots
+        │   │   ├── sunny-glade-draft.md
+        │   │   └── sunny-glade-reviewed.md
+        │   ├── 002.md
+        │   └── ...
+        │
+        ├── agents/
+        │   ├── sunny-glade.log       # Session-wide debug log (appended)
+        │   ├── sunny-glade/
+        │   │   └── cli_session_id.txt    # For --resume
+        │   ├── amber-marsh.log
+        │   └── synthesizer.log
+        │
+        └── PLAN.md                   # Symlink to approved turn
 ```
 
 **Key points:**
@@ -123,11 +126,37 @@ When you edit `turns/001.md` and call `continue`, agents receive your changes as
 
 ## Configuration
 
-Default agents (in code):
-- **opus**: Claude Code with Opus 4.5
-- **codex**: OpenAI Codex CLI
+Edit `.thunk/thunk.yaml` (or `.thunk/thunk.yml`) to configure agents:
 
-Both run from the project root with full read access and limited tool permissions for safe exploration.
+```yaml
+allowed_tools:
+  - Read
+  - Edit
+  - Write
+  # See .thunk/thunk.yaml for the full default list
+agents:
+  - id: opus
+    type: claude
+    model: opus
+    enabled: true
+  - id: codex
+    type: codex
+    model: codex-5.2
+    thinking: xmax
+    enabled: true
+synthesizer:
+  id: synthesizer
+  type: claude
+  model: opus
+  enabled: true
+# timeout: 300
+```
+
+If the file is missing, defaults are used. `--timeout` overrides the config.
+For Codex agents, `thinking` maps to the `--thinking` CLI flag.
+For Claude agents, `allowed_tools` maps to `--allowedTools`.
+Override `allowed_tools` per agent by setting `allowed_tools` on that agent entry.
+If you pass `--thunk-dir`, the config is loaded from that directory.
 
 ## Architecture
 

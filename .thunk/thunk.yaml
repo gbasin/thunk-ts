@@ -1,0 +1,67 @@
+# Thunk configuration
+allowed_tools:
+  - Read
+  - Edit
+  - Write
+  # Override per agent with agents[].allowed_tools if needed.
+  - MultiEdit
+  - Glob
+  - Grep
+  - LS
+  - NotebookRead
+  - NotebookEdit
+  - WebFetch
+  - WebSearch
+  - Task
+  - Bash(git:*)
+  - Bash(ls:*)
+  - Bash(find:*)
+  - Bash(cat:*)
+  - Bash(head:*)
+  - Bash(tail:*)
+  - Bash(wc:*)
+  - Bash(grep:*)
+  - Bash(rg:*)
+  - Bash(tree:*)
+  - Bash(file:*)
+  - Bash(stat:*)
+  - Bash(du:*)
+  - Bash(pwd:*)
+  - Bash(echo:*)
+  - Bash(which:*)
+  - Bash(env:*)
+  - Bash(python:*)
+  - Bash(python3:*)
+  - Bash(node:*)
+  - Bash(npm:*)
+  - Bash(pnpm:*)
+  - Bash(yarn:*)
+  - Bash(pip:*)
+  - Bash(uv:*)
+  - Bash(cargo:*)
+  - Bash(go:*)
+  - Bash(make:*)
+  - Bash(jq:*)
+  - Bash(curl:*)
+  - Bash(diff:*)
+  - Bash(sort:*)
+  - Bash(uniq:*)
+  - Bash(xargs:*)
+  - Bash(sed:*)
+  - Bash(awk:*)
+agents:
+  - id: opus
+    type: claude
+    model: opus
+    enabled: true
+  - id: codex
+    type: codex
+    model: codex-5.2
+    thinking: xmax
+    enabled: true
+synthesizer:
+  id: synthesizer
+  type: claude
+  model: opus
+  enabled: true
+# timeout: 300

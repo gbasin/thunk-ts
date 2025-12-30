@@ -180,11 +180,17 @@ describe("Adapters", () => {
       const outputFile = path.join(root, "output.md");
       const outputFileSync = path.join(root, "output-sync.md");
 
-      const adapter = new ClaudeCodeAdapter({ id: "claude", type: "claude", model: "sonnet" });
+      const adapter = new ClaudeCodeAdapter({
+        id: "claude",
+        type: "claude",
+        model: "sonnet",
+        allowedTools: ["Read"],
+      });
       const syncAdapter = new ClaudeCodeSyncAdapter({
         id: "claude-sync",
         type: "claude",
         model: "sonnet",
+        allowedTools: ["Read"],
       });
 
       const originalSpawn = Bun.spawn;
@@ -223,6 +229,8 @@ describe("Adapters", () => {
       expect(commands[0]).not.toContain("--add-dir");
       expect(commands[1]).toContain("--add-dir");
       expect(commands[1]).toContain("--allowedTools");
+      expect(commands[1]).toContain("Read");
+      expect(commands[1]).not.toContain("Glob");
       expect(adapter.getName()).toBe("Claude Code (sonnet)");
       expect(syncAdapter.getName()).toBe("Claude Code Sync (sonnet)");
       expect(await fs.readFile(logFile, "utf8")).toBe("");
@@ -278,11 +286,17 @@ describe("Adapters", () => {
       const outputFile = path.join(root, "output.md");
       const outputFileSync = path.join(root, "output-sync.md");
 
-      const adapter = new CodexCLIAdapter({ id: "codex", type: "codex", model: "mini" });
+      const adapter = new CodexCLIAdapter({
+        id: "codex",
+        type: "codex",
+        model: "codex-5.2",
+        thinking: "xmax",
+      });
       const syncAdapter = new CodexCLISyncAdapter({
         id: "codex-sync",
         type: "codex",
-        model: "mini",
+        model: "codex-5.2",
+        thinking: "xmax",
       });
 
       const originalSpawn = Bun.spawn;
@@ -315,13 +329,21 @@ describe("Adapters", () => {
 
       expect(commands.length).toBe(2);
       expect(commands[0]).toContain("--add-dir");
+      expect(commands[0]).toContain("--model");
+      expect(commands[0]).toContain("codex-5.2");
+      expect(commands[0]).toContain("--thinking");
+      expect(commands[0]).toContain("xmax");
       expect(commands[0]).toContain("resume");
       expect(commands[0]).toContain("thread-123");
       expect(commands[1]).toContain("--add-dir");
+      expect(commands[1]).toContain("--model");
+      expect(commands[1]).toContain("codex-5.2");
+      expect(commands[1]).toContain("--thinking");
+      expect(commands[1]).toContain("xmax");
       expect(commands[1]).toContain("resume");
       expect(commands[1]).toContain("thread-123");
-      expect(adapter.getName()).toBe("Codex CLI (mini)");
-      expect(syncAdapter.getName()).toBe("Codex CLI Sync (mini)");
+      expect(adapter.getName()).toBe("Codex CLI (codex-5.2)");
+      expect(syncAdapter.getName()).toBe("Codex CLI Sync (codex-5.2)");
       expect(await fs.readFile(logFile, "utf8")).toBe("");
       expect(await fs.readFile(logFileSync, "utf8")).toBe("");
     });

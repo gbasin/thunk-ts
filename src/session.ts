@@ -2,7 +2,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { dump, load } from "js-yaml";
 
-import { AgentStatus, Phase, SessionPaths, SessionState } from "./models";
+import { AgentStatus, Phase, SessionPaths, SessionState, ThunkConfig } from "./models";
 import { generateName } from "./names";
 
 export class SessionManager {
@@ -14,7 +14,7 @@ export class SessionManager {
     this.sessionsDir = path.join(this.thunkDir, "sessions");
   }
 
-  async createSession(task: string): Promise<SessionState> {
+  async createSession(task: string, config?: ThunkConfig): Promise<SessionState> {
     const sessionId = await this.generateUniqueSessionId();
     const now = new Date();
 
@@ -32,11 +32,14 @@ export class SessionManager {
       updatedAt: now,
     });
 
-    const meta = {
+    const meta: Record<string, unknown> = {
       session_id: sessionId,
       task,
       created_at: now.toISOString(),
     };
+    if (config) {
+      meta.config = config.toConfigDict();
+    }
 
     await fs.writeFile(paths.meta, dump(meta), "utf8");
     await this.saveState(state, false);

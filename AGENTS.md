@@ -37,6 +37,7 @@ bun run build      # bun build
 - Fix root causes, not symptoms
 - Simplicity > cleverness (even if it means bigger refactors)
 - 100% test coverage (forces edge-case thinking)
+- Run `bun run lint && bun run test` after each batch of code changes
 
 ## Project Overview
 

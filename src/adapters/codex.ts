@@ -45,12 +45,18 @@ async function writeThreadId(
 }
 
 function buildCmd(
-  _config: AgentConfig,
+  config: AgentConfig,
   prompt: string,
   threadId?: string | null,
   projectRoot?: string | null,
 ): string[] {
   const cmd = ["codex", "exec", "--json", "--full-auto"];
+  if (config.model) {
+    cmd.push("--model", config.model);
+  }
+  if (config.thinking) {
+    cmd.push("--thinking", config.thinking);
+  }
   if (projectRoot) {
     cmd.push("--add-dir", projectRoot);
   }
