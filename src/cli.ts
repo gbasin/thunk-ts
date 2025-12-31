@@ -266,6 +266,7 @@ function buildProgram(argv = process.argv) {
       if (Object.keys(state.agentErrors).length > 0) {
         result.agent_errors = state.agentErrors;
       }
+      await attachEditUrl(result, sessionId, manager);
       outputJson(result, pretty);
     });
 
