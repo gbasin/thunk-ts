@@ -11,7 +11,12 @@ import {
   validateGlobalToken,
   validateSessionToken,
 } from "../src/server/auth";
-import { isDaemonRunning, startDaemon, stopDaemon } from "../src/server/daemon";
+import {
+  isDaemonRunning,
+  startDaemon,
+  stopDaemon,
+  updateServerActivity,
+} from "../src/server/daemon";
 import { createHandlers } from "../src/server/handlers";
 import { findAvailablePort, getLocalIP } from "../src/server/network";
 
@@ -102,6 +107,12 @@ describe("network", () => {
     expect(found).toBe(5002);
     expect(seen).toEqual([5000, 5001, 5002]);
   });
+
+  it("throws when no ports are available", async () => {
+    await expect(findAvailablePort(6000, { isAvailable: async () => false })).rejects.toThrow(
+      "No available port found starting at 6000",
+    );
+  });
 });
 
 describe("daemon", () => {
@@ -128,6 +139,30 @@ describe("daemon", () => {
       expect(info.pid).toBe(2222);
       expect(info.port).toBe(4567);
       expect(info.last_activity).toBe("2024-01-01T00:00:00.000Z");
+    });
+  });
+
+  it("updates server activity timestamp", async () => {
+    await withTempDir(async (root) => {
+      const thunkDir = path.join(root, ".thunk");
+      await fs.mkdir(thunkDir, { recursive: true });
+      await fs.writeFile(
+        path.join(thunkDir, "server.json"),
+        JSON.stringify({
+          pid: 2222,
+          port: 4567,
+          started_at: "2024-01-01T00:00:00.000Z",
+          last_activity: "2024-01-01T00:00:00.000Z",
+        }),
+        "utf8",
+      );
+
+      const now = new Date("2024-02-01T00:00:00Z");
+      await updateServerActivity(thunkDir, now);
+
+      const raw = await fs.readFile(path.join(thunkDir, "server.json"), "utf8");
+      const info = JSON.parse(raw) as { last_activity: string };
+      expect(info.last_activity).toBe(now.toISOString());
     });
   });
 
@@ -168,6 +203,64 @@ describe("daemon", () => {
       try {
         const stopped = await stopDaemon(thunkDir);
         expect(stopped).toBe(true);
+      } finally {
+        process.kill = originalKill;
+      }
+    });
+  });
+
+  it("returns false when daemon pid is missing", async () => {
+    await withTempDir(async (root) => {
+      const thunkDir = path.join(root, ".thunk");
+      await fs.mkdir(thunkDir, { recursive: true });
+      await fs.writeFile(
+        path.join(thunkDir, "server.json"),
+        JSON.stringify({ pid: 7777, port: 9999 }),
+        "utf8",
+      );
+
+      const originalKill = process.kill;
+      process.kill = ((pid: number) => {
+        if (pid === 7777) {
+          const error = new Error("missing pid") as NodeJS.ErrnoException;
+          error.code = "ESRCH";
+          throw error;
+        }
+        throw new Error("Unexpected pid");
+      }) as typeof process.kill;
+
+      try {
+        const stopped = await stopDaemon(thunkDir);
+        expect(stopped).toBe(false);
+        await expect(fs.readFile(path.join(thunkDir, "server.json"), "utf8")).rejects.toBeDefined();
+      } finally {
+        process.kill = originalKill;
+      }
+    });
+  });
+
+  it("propagates daemon stop errors", async () => {
+    await withTempDir(async (root) => {
+      const thunkDir = path.join(root, ".thunk");
+      await fs.mkdir(thunkDir, { recursive: true });
+      await fs.writeFile(
+        path.join(thunkDir, "server.json"),
+        JSON.stringify({ pid: 8888, port: 9999 }),
+        "utf8",
+      );
+
+      const originalKill = process.kill;
+      process.kill = ((pid: number) => {
+        if (pid === 8888) {
+          const error = new Error("permission denied") as NodeJS.ErrnoException;
+          error.code = "EPERM";
+          throw error;
+        }
+        throw new Error("Unexpected pid");
+      }) as typeof process.kill;
+
+      try {
+        await expect(stopDaemon(thunkDir)).rejects.toBeDefined();
       } finally {
         process.kill = originalKill;
       }

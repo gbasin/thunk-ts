@@ -184,6 +184,13 @@ describe("SessionManager", () => {
     });
   });
 
+  it("throws when ensuring token for missing session", async () => {
+    await withTempDir(async (root) => {
+      const manager = new SessionManager(path.join(root, ".thunk-test"));
+      await expect(manager.ensureSessionToken("missing-session")).rejects.toBeDefined();
+    });
+  });
+
   it("returns false when cleaning missing session", async () => {
     await withTempDir(async (root) => {
       const manager = new SessionManager(path.join(root, ".thunk-test"));
