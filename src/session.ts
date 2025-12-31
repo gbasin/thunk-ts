@@ -4,6 +4,7 @@ import { dump, load } from "js-yaml";
 
 import { AgentStatus, Phase, SessionPaths, SessionState, ThunkConfig } from "./models";
 import { generateName } from "./names";
+import { generateToken } from "./server/auth";
 
 export class SessionManager {
   thunkDir: string;
@@ -30,6 +31,7 @@ export class SessionManager {
       phase: Phase.Initializing,
       createdAt: now,
       updatedAt: now,
+      sessionToken: generateToken(),
     });
 
     const meta: Record<string, unknown> = {
@@ -92,6 +94,7 @@ export class SessionManager {
       turn: number;
       phase: string;
       updated_at: string;
+      session_token?: string;
       agents?: Record<string, string>;
       agent_plan_ids?: Record<string, string>;
       agent_errors?: Record<string, string>;
@@ -109,6 +112,7 @@ export class SessionManager {
       ),
       agentPlanIds: stateData.agent_plan_ids ?? {},
       agentErrors: stateData.agent_errors ?? {},
+      sessionToken: stateData.session_token,
     });
   }
 
@@ -125,6 +129,9 @@ export class SessionManager {
       agents: Object.fromEntries(Object.entries(state.agents).map(([key, value]) => [key, value])),
       agent_plan_ids: state.agentPlanIds,
     };
+    if (state.sessionToken) {
+      stateData.session_token = state.sessionToken;
+    }
     if (Object.keys(state.agentErrors).length > 0) {
       stateData.agent_errors = state.agentErrors;
     }
@@ -193,6 +200,19 @@ export class SessionManager {
 
     const paths = this.getPaths(sessionId);
     return paths.turnFile(state.turn);
+  }
+
+  async ensureSessionToken(sessionId: string): Promise<string> {
+    const state = await this.loadSession(sessionId);
+    if (!state) {
+      throw new Error(`Session ${sessionId} not found`);
+    }
+    if (state.sessionToken) {
+      return state.sessionToken;
+    }
+    state.sessionToken = generateToken();
+    await this.saveState(state, false);
+    return state.sessionToken;
   }
 
   async hasQuestions(sessionId: string): Promise<boolean> {

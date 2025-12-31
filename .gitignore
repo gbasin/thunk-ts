@@ -8,3 +8,6 @@ dist/
 coverage/
 /.vscode
 /.thunk/sessions
+/.thunk/server.json
+/.thunk/token
+/.thunk/server.log

@@ -5,6 +5,10 @@ import sade from "sade";
 import { Phase, ThunkConfig } from "./models";
 import { TurnOrchestrator } from "./orchestrator";
 import { SessionManager } from "./session";
+import { ensureGlobalToken } from "./server/auth";
+import { isDaemonRunning, startDaemon, stopDaemon } from "./server/daemon";
+import { startServer } from "./server/index";
+import { findAvailablePort, getLocalIP } from "./server/network";
 
 function outputJson(data: Record<string, unknown>, pretty = false): void {
   const output = pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data);
@@ -20,6 +24,15 @@ function resolveThunkDir(opts: Record<string, unknown>, fallback?: string): stri
 
 function resolvePretty(opts: Record<string, unknown>, fallback = false): boolean {
   return Boolean(opts.pretty ?? opts["pretty"] ?? fallback);
+}
+
+function resolveEnvPort(): number | undefined {
+  const value = process.env.THUNK_PORT;
+  if (!value) {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isNaN(parsed) ? undefined : parsed;
 }
 
 function extractGlobalOptions(argv: string[]): {
@@ -66,6 +79,51 @@ function exitWithError(data: Record<string, unknown>, pretty: boolean): never {
   process.exit(1);
 }
 
+function isWebEnabled(): boolean {
+  const value = process.env.THUNK_WEB;
+  if (value === undefined) {
+    return true;
+  }
+  return value !== "0" && value.toLowerCase() !== "false";
+}
+
+async function copyToClipboard(text: string): Promise<void> {
+  try {
+    const clipboardy = await import("clipboardy");
+    await clipboardy.default.write(text);
+  } catch {
+    // ignore clipboard errors
+  }
+}
+
+async function attachEditUrl(
+  result: Record<string, unknown>,
+  sessionId: string,
+  manager: SessionManager,
+): Promise<void> {
+  if (!isWebEnabled()) {
+    return;
+  }
+  try {
+    let status = await isDaemonRunning(manager.thunkDir);
+    if (!status.running) {
+      const started = await startDaemon(manager.thunkDir);
+      status = { running: true, port: started.port, pid: started.pid };
+    }
+    if (!status.port) {
+      return;
+    }
+    const token = await manager.ensureSessionToken(sessionId);
+    const host = getLocalIP();
+    const url = `http://${host}:${status.port}/edit/${sessionId}?t=${token}`;
+    await copyToClipboard(url);
+    result.edit_url = url;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to start web editor";
+    result.web_error = message;
+  }
+}
+
 async function loadConfig(pretty: boolean, thunkDir: string): Promise<ThunkConfig> {
   try {
     return await ThunkConfig.loadFromThunkDir(thunkDir);
@@ -93,7 +151,7 @@ async function loadSessionConfig(
   return await loadConfig(pretty, manager.thunkDir);
 }
 
-export function runCli(argv = process.argv): void {
+function buildProgram(argv = process.argv) {
   const globalOptions = extractGlobalOptions(argv);
   const prog = sade("thunk");
 
@@ -244,6 +302,7 @@ export function runCli(argv = process.argv): void {
         if (Object.keys(state.agentErrors).length > 0) {
           result.agent_errors = state.agentErrors;
         }
+        await attachEditUrl(result, sessionId, manager);
         outputJson(result, pretty);
         return;
       }
@@ -293,6 +352,9 @@ export function runCli(argv = process.argv): void {
           if (Object.keys(updatedState.agentErrors).length > 0) {
             result.agent_errors = updatedState.agentErrors;
           }
+          if (updatedState.phase === Phase.UserReview) {
+            await attachEditUrl(result, sessionId, manager);
+          }
           outputJson(result, pretty);
         } else {
           const errorResult: Record<string, unknown> = {
@@ -317,6 +379,84 @@ export function runCli(argv = process.argv): void {
         },
         pretty,
       );
+    });
+
+  prog
+    .command("server [action]")
+    .describe("Manage the web editor server")
+    .option("--foreground", "Run server in foreground")
+    .action(async (action: string | undefined, opts: Record<string, unknown>) => {
+      const manager = new SessionManager(resolveThunkDir(opts, globalOptions.thunkDir));
+      const pretty = resolvePretty(opts, globalOptions.pretty);
+      const mode = (action ?? "status").toLowerCase();
+      const portOverride = resolveEnvPort();
+
+      if (mode === "start") {
+        if (opts.foreground) {
+          const running = await isDaemonRunning(manager.thunkDir);
+          if (running.running) {
+            exitWithError({ error: "Server already running" }, pretty);
+          }
+          const port = portOverride ?? (await findAvailablePort(3456));
+          const token = await ensureGlobalToken(manager.thunkDir);
+          const url = `http://${getLocalIP()}:${port}/list?t=${token}`;
+          outputJson({ running: true, foreground: true, port, url }, pretty);
+          await startServer({ thunkDir: manager.thunkDir, port });
+          return;
+        }
+
+        let status = await isDaemonRunning(manager.thunkDir);
+        if (!status.running) {
+          const started = await startDaemon(
+            manager.thunkDir,
+            portOverride === undefined ? {} : { port: portOverride },
+          );
+          status = { running: true, port: started.port, pid: started.pid };
+        }
+        const token = await ensureGlobalToken(manager.thunkDir);
+        const url = status.port ? `http://${getLocalIP()}:${status.port}/list?t=${token}` : null;
+        outputJson(
+          {
+            running: true,
+            port: status.port,
+            pid: status.pid,
+            url,
+          },
+          pretty,
+        );
+        return;
+      }
+
+      if (mode === "stop") {
+        const stopped = await stopDaemon(manager.thunkDir);
+        if (!stopped) {
+          exitWithError({ error: "Server not running" }, pretty);
+        }
+        outputJson({ stopped: true }, pretty);
+        return;
+      }
+
+      if (mode === "status") {
+        const status = await isDaemonRunning(manager.thunkDir);
+        if (!status.running) {
+          outputJson({ running: false }, pretty);
+          return;
+        }
+        const token = await ensureGlobalToken(manager.thunkDir);
+        const url = status.port ? `http://${getLocalIP()}:${status.port}/list?t=${token}` : null;
+        outputJson(
+          {
+            running: true,
+            port: status.port,
+            pid: status.pid,
+            url,
+          },
+          pretty,
+        );
+        return;
+      }
+
+      exitWithError({ error: `Unknown server action: ${mode}` }, pretty);
     });
 
   prog
@@ -482,5 +622,20 @@ export function runCli(argv = process.argv): void {
       );
     });
 
-  prog.parse(globalOptions.argv);
+  return { prog, argv: globalOptions.argv };
+}
+
+export function runCli(argv = process.argv): void {
+  const { prog, argv: parsedArgv } = buildProgram(argv);
+  prog.parse(parsedArgv);
+}
+
+export async function runCliCommand(argv = process.argv): Promise<void> {
+  const { prog, argv: parsedArgv } = buildProgram(argv);
+  const parsed = (prog as unknown as { parse: (...args: unknown[]) => unknown }).parse(parsedArgv, {
+    lazy: true,
+  }) as { handler: (...args: unknown[]) => unknown; args: unknown[] } | undefined;
+  if (parsed) {
+    await parsed.handler(...parsed.args);
+  }
 }

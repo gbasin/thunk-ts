@@ -394,6 +394,7 @@ export class SessionState {
   agents: AgentStatusMap;
   agentPlanIds: AgentPlanIdMap;
   agentErrors: AgentErrorMap;
+  sessionToken?: string;
 
   constructor(params: {
     sessionId: string;
@@ -405,6 +406,7 @@ export class SessionState {
     agents?: AgentStatusMap;
     agentPlanIds?: AgentPlanIdMap;
     agentErrors?: AgentErrorMap;
+    sessionToken?: string;
   }) {
     this.sessionId = params.sessionId;
     this.task = params.task;
@@ -415,6 +417,7 @@ export class SessionState {
     this.agents = params.agents ?? {};
     this.agentPlanIds = params.agentPlanIds ?? {};
     this.agentErrors = params.agentErrors ?? {};
+    this.sessionToken = params.sessionToken;
   }
 
   toDict(): Record<string, unknown> {
@@ -428,6 +431,9 @@ export class SessionState {
       agents: Object.fromEntries(Object.entries(this.agents).map(([key, value]) => [key, value])),
       agent_plan_ids: this.agentPlanIds,
     };
+    if (this.sessionToken) {
+      dict.session_token = this.sessionToken;
+    }
     if (Object.keys(this.agentErrors).length > 0) {
       dict.agent_errors = this.agentErrors;
     }

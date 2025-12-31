@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "bun run src/index.ts",
     "build": "bun build src/index.ts --outdir dist --target bun",
+    "build:web": "bun run src/web/build.ts",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src tests",
     "format": "biome format --write .",
@@ -17,6 +18,7 @@
     "quality": "bun run lint && bun run typecheck && bun run test && bun run build"
   },
   "dependencies": {
+    "clipboardy": "^4.0.0",
     "diff": "^5.2.0",
     "js-yaml": "^4.1.0",
     "sade": "^1.8.1"
@@ -25,6 +27,8 @@
     "@biomejs/biome": "^1.9.4",
     "@types/diff": "^8.0.0",
     "@types/js-yaml": "^4.0.9",
+    "lit": "^3.2.1",
+    "monaco-editor": "^0.52.0",
     "bun-types": "^1.1.25",
     "oxlint": "^0.13.0",
     "typescript": "^5.5.4"

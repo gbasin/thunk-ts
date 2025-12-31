@@ -1,7 +1,7 @@
 import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 
 import { Phase } from "../src/models";
 import { SessionManager } from "../src/session";
@@ -236,6 +236,237 @@ process.exit(1);
         expect(data.agent_errors).toEqual({ codex: "error: codex failed" });
         expect(await fs.readFile(data.file, "utf8")).toContain("# Plan");
       });
+    });
+  });
+
+  it("wait emits edit_url when web enabled", async () => {
+    await withTempDir(async (root) => {
+      const thunkDir = path.join(root, ".thunk-test");
+      const manager = new SessionManager(thunkDir);
+      const state = await manager.createSession("Web test");
+      state.phase = Phase.UserReview;
+      await manager.saveState(state);
+
+      mock.module("../src/server/daemon", () => ({
+        isDaemonRunning: mock(async () => ({ running: false })),
+        startDaemon: mock(async () => ({ pid: 123, port: 4567 })),
+        stopDaemon: mock(async () => true),
+      }));
+      mock.module("clipboardy", () => ({
+        default: {
+          write: mock(() => {
+            throw new Error("clipboard failed");
+          }),
+        },
+      }));
+
+      const logs: string[] = [];
+      const originalLog = console.log;
+      console.log = (message?: unknown) => {
+        logs.push(String(message ?? ""));
+      };
+
+      const originalEnv = process.env.THUNK_HOST;
+      process.env.THUNK_HOST = "127.0.0.1";
+
+      try {
+        const { runCliCommand } = await import("../src/cli");
+        await runCliCommand([
+          "node",
+          "thunk",
+          "--thunk-dir",
+          thunkDir,
+          "wait",
+          "--session",
+          state.sessionId,
+        ]);
+      } finally {
+        console.log = originalLog;
+        if (originalEnv === undefined) {
+          delete process.env.THUNK_HOST;
+        } else {
+          process.env.THUNK_HOST = originalEnv;
+        }
+        mock.restore();
+      }
+
+      const output = JSON.parse(logs[0]);
+      expect(output.edit_url).toBe(
+        `http://127.0.0.1:4567/edit/${state.sessionId}?t=${state.sessionToken}`,
+      );
+    });
+  });
+
+  it("wait skips edit_url when THUNK_WEB=0", async () => {
+    await withTempDir(async (root) => {
+      const thunkDir = path.join(root, ".thunk-test");
+      const manager = new SessionManager(thunkDir);
+      const state = await manager.createSession("Web test");
+      state.phase = Phase.UserReview;
+      await manager.saveState(state);
+
+      const logs: string[] = [];
+      const originalLog = console.log;
+      console.log = (message?: unknown) => {
+        logs.push(String(message ?? ""));
+      };
+
+      const originalWeb = process.env.THUNK_WEB;
+      process.env.THUNK_WEB = "0";
+
+      try {
+        const { runCliCommand } = await import("../src/cli");
+        await runCliCommand([
+          "node",
+          "thunk",
+          "--thunk-dir",
+          thunkDir,
+          "wait",
+          "--session",
+          state.sessionId,
+        ]);
+      } finally {
+        console.log = originalLog;
+        if (originalWeb === undefined) {
+          delete process.env.THUNK_WEB;
+        } else {
+          process.env.THUNK_WEB = originalWeb;
+        }
+      }
+
+      const output = JSON.parse(logs[0]);
+      expect(output.edit_url).toBeUndefined();
+    });
+  });
+
+  it("server status reports running", async () => {
+    await withTempDir(async (root) => {
+      const thunkDir = path.join(root, ".thunk-test");
+
+      mock.module("../src/server/daemon", () => ({
+        isDaemonRunning: mock(async () => ({ running: true, port: 5555, pid: 999 })),
+        startDaemon: mock(async () => ({ pid: 999, port: 5555 })),
+        stopDaemon: mock(async () => true),
+      }));
+
+      const logs: string[] = [];
+      const originalLog = console.log;
+      console.log = (message?: unknown) => {
+        logs.push(String(message ?? ""));
+      };
+
+      const originalHost = process.env.THUNK_HOST;
+      process.env.THUNK_HOST = "127.0.0.1";
+
+      try {
+        const { runCliCommand } = await import("../src/cli");
+        await runCliCommand(["node", "thunk", "--thunk-dir", thunkDir, "server", "status"]);
+      } finally {
+        console.log = originalLog;
+        if (originalHost === undefined) {
+          delete process.env.THUNK_HOST;
+        } else {
+          process.env.THUNK_HOST = originalHost;
+        }
+        mock.restore();
+      }
+
+      const output = JSON.parse(logs[0]);
+      expect(output.running).toBe(true);
+      expect(output.port).toBe(5555);
+      expect(output.pid).toBe(999);
+    });
+  });
+
+  it("server start and stop use daemon helpers", async () => {
+    await withTempDir(async (root) => {
+      const thunkDir = path.join(root, ".thunk-test");
+
+      mock.module("../src/server/daemon", () => ({
+        isDaemonRunning: mock(async () => ({ running: false })),
+        startDaemon: mock(async () => ({ pid: 321, port: 7777 })),
+        stopDaemon: mock(async () => true),
+      }));
+
+      const logs: string[] = [];
+      const originalLog = console.log;
+      console.log = (message?: unknown) => {
+        logs.push(String(message ?? ""));
+      };
+
+      const originalHost = process.env.THUNK_HOST;
+      process.env.THUNK_HOST = "127.0.0.1";
+
+      try {
+        const { runCliCommand } = await import("../src/cli");
+        await runCliCommand(["node", "thunk", "--thunk-dir", thunkDir, "server", "start"]);
+        await runCliCommand(["node", "thunk", "--thunk-dir", thunkDir, "server", "stop"]);
+      } finally {
+        console.log = originalLog;
+        if (originalHost === undefined) {
+          delete process.env.THUNK_HOST;
+        } else {
+          process.env.THUNK_HOST = originalHost;
+        }
+        mock.restore();
+      }
+
+      const startOutput = JSON.parse(logs[0]);
+      expect(startOutput.running).toBe(true);
+      expect(startOutput.port).toBe(7777);
+      expect(startOutput.pid).toBe(321);
+
+      const stopOutput = JSON.parse(logs[1]);
+      expect(stopOutput.stopped).toBe(true);
+    });
+  });
+
+  it("server start respects THUNK_PORT override", async () => {
+    await withTempDir(async (root) => {
+      const thunkDir = path.join(root, ".thunk-test");
+      let receivedOptions: Record<string, unknown> | undefined;
+
+      mock.module("../src/server/daemon", () => ({
+        isDaemonRunning: mock(async () => ({ running: false })),
+        startDaemon: mock(async (_dir: string, options?: Record<string, unknown>) => {
+          receivedOptions = options;
+          return { pid: 111, port: (options?.port as number) ?? 0 };
+        }),
+        stopDaemon: mock(async () => true),
+      }));
+
+      const logs: string[] = [];
+      const originalLog = console.log;
+      console.log = (message?: unknown) => {
+        logs.push(String(message ?? ""));
+      };
+
+      const originalHost = process.env.THUNK_HOST;
+      process.env.THUNK_HOST = "127.0.0.1";
+      const originalPort = process.env.THUNK_PORT;
+      process.env.THUNK_PORT = "7788";
+
+      try {
+        const { runCliCommand } = await import("../src/cli");
+        await runCliCommand(["node", "thunk", "--thunk-dir", thunkDir, "server", "start"]);
+      } finally {
+        console.log = originalLog;
+        if (originalHost === undefined) {
+          delete process.env.THUNK_HOST;
+        } else {
+          process.env.THUNK_HOST = originalHost;
+        }
+        if (originalPort === undefined) {
+          delete process.env.THUNK_PORT;
+        } else {
+          process.env.THUNK_PORT = originalPort;
+        }
+        mock.restore();
+      }
+
+      expect(receivedOptions).toEqual({ port: 7788 });
+      const startOutput = JSON.parse(logs[0]);
+      expect(startOutput.port).toBe(7788);
     });
   });
 

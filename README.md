@@ -38,6 +38,40 @@ bun run src/index.ts continue --session <session_id>
 bun run src/index.ts approve --session <session_id>
 ```
 
+## Web Editor
+
+Thunk can launch a lightweight web editor for reviewing and editing plans. When `thunk wait`
+returns `user_review`, it will start a local server (if needed) and include an `edit_url` in
+the JSON output.
+
+```bash
+# Default behavior: start server and emit edit_url
+bun run src/index.ts wait --session <session_id>
+
+# Disable web editor
+THUNK_WEB=0 bun run src/index.ts wait --session <session_id>
+```
+
+Manual server control:
+
+```bash
+thunk server start        # start daemon
+thunk server stop         # stop daemon
+thunk server status       # check running status
+thunk server start --foreground  # run in foreground (dev)
+```
+
+For remote access (Tailscale/VPN), override the host used in URLs:
+
+```bash
+THUNK_HOST=100.x.x.x bun run src/index.ts wait --session <session_id>
+```
+
+Troubleshooting:
+- If the browser cannot connect, check local firewall settings and that the port is reachable.
+- If port 3456 is taken, the server will try the next available port.
+- Clipboard copy is best-effort; the URL is always printed in JSON output.
+
 ## How It Works
 
 ### Turn-Based Planning
@@ -85,6 +119,7 @@ When you edit `turns/001.md` and call `continue`, agents receive your changes as
 | `thunk list` | List all sessions |
 | `thunk clean --session <id>` | Remove session data |
 | `thunk diff --session <id>` | Show changes between turns |
+| `thunk server start|stop|status` | Manage web editor server |
 
 ## File Structure
 
@@ -196,6 +231,12 @@ bun run lint
 bun run typecheck
 bun run test
 bun run build
+```
+
+Build the web editor assets:
+
+```bash
+bun run build:web
 ```
 
 ## Design Decisions

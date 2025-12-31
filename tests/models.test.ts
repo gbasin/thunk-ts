@@ -38,6 +38,7 @@ describe("SessionState", () => {
       updatedAt: now,
       agents: { opus: AgentStatus.Done },
       agentPlanIds: { opus: "sunny-glade" },
+      sessionToken: "session-token",
     });
 
     const dict = state.toDict();
@@ -48,6 +49,7 @@ describe("SessionState", () => {
     expect(dict.phase).toBe("user_review");
     expect(dict.agents).toEqual({ opus: "done" });
     expect(dict.agent_plan_ids).toEqual({ opus: "sunny-glade" });
+    expect(dict.session_token).toBe("session-token");
   });
 
   it("serializes agent errors when present", () => {

@@ -2,7 +2,7 @@ import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
 import { describe, expect, it } from "bun:test";
-import { load } from "js-yaml";
+import { dump, load } from "js-yaml";
 
 import { Phase, ThunkConfig } from "../src/models";
 import { SessionManager } from "../src/session";
@@ -26,10 +26,13 @@ describe("SessionManager", () => {
       expect(state.task).toBe("Add caching layer");
       expect(state.turn).toBe(1);
       expect(state.phase).toBe(Phase.Initializing);
+      expect(state.sessionToken).toBeDefined();
+      expect(state.sessionToken?.length).toBe(16);
 
       const loaded = await manager.loadSession(state.sessionId);
       expect(loaded?.sessionId).toBe(state.sessionId);
       expect(loaded?.task).toBe(state.task);
+      expect(loaded?.sessionToken).toBe(state.sessionToken);
     });
   });
 
@@ -127,6 +130,36 @@ describe("SessionManager", () => {
       const stateContent = await fs.readFile(paths.state, "utf8");
       const stateData = load(stateContent) as { agent_errors?: Record<string, string> };
       expect(stateData.agent_errors).toEqual({ codex: "error: draft failed" });
+    });
+  });
+
+  it("writes session token to state.yaml", async () => {
+    await withTempDir(async (root) => {
+      const manager = new SessionManager(path.join(root, ".thunk-test"));
+      const state = await manager.createSession("Token task");
+      const paths = manager.getPaths(state.sessionId);
+      const stateContent = await fs.readFile(paths.state, "utf8");
+      const data = load(stateContent) as { session_token?: string };
+
+      expect(data.session_token).toBe(state.sessionToken);
+    });
+  });
+
+  it("ensures session token when missing", async () => {
+    await withTempDir(async (root) => {
+      const manager = new SessionManager(path.join(root, ".thunk-test"));
+      const state = await manager.createSession("Token recovery");
+      const paths = manager.getPaths(state.sessionId);
+      const stateContent = await fs.readFile(paths.state, "utf8");
+      const data = load(stateContent) as { session_token?: string };
+
+      delete data.session_token;
+      await fs.writeFile(paths.state, dump(data), "utf8");
+
+      const token = await manager.ensureSessionToken(state.sessionId);
+      expect(token).toBeDefined();
+      const updated = await manager.loadSession(state.sessionId);
+      expect(updated?.sessionToken).toBe(token);
     });
   });
 
