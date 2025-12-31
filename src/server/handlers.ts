@@ -455,7 +455,7 @@ export function createHandlers(context: HandlerContext) {
 
       if (assetPath.endsWith(".js")) {
         const srcRoot = path.resolve(import.meta.dir, "..", "web");
-        const sourcePath = path.join(srcRoot, assetPath.replace(/\\.js$/, ".ts"));
+        const sourcePath = path.join(srcRoot, assetPath.replace(/\.js$/, ".ts"));
         try {
           await fs.access(sourcePath);
         } catch {

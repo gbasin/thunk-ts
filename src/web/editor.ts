@@ -39,11 +39,11 @@ class ThunkEditor extends LitElement {
     },
   };
 
-  session = "";
-  token = "";
-  turn = 1;
-  phase = "user_review";
-  readOnly = false;
+  declare session: string;
+  declare token: string;
+  declare turn: number;
+  declare phase: string;
+  declare readOnly: boolean;
 
   private editor: monaco.editor.IStandaloneCodeEditor | null = null;
   private mtime = 0;
