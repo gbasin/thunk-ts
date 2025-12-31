@@ -12,7 +12,7 @@ type ServerStart = {
 
 const IDLE_CHECK_MS = 60 * 60 * 1000;
 
-function parsePortArg(argv: string[]): number | null {
+export function parsePortArg(argv: string[]): number | null {
   const index = argv.findIndex((arg) => arg === "--port");
   if (index >= 0 && argv[index + 1]) {
     const parsed = Number(argv[index + 1]);
@@ -30,7 +30,7 @@ function parsePortArg(argv: string[]): number | null {
   return null;
 }
 
-async function resolveThunkDir(): Promise<string> {
+export async function resolveThunkDir(): Promise<string> {
   const envDir = process.env.THUNK_DIR;
   if (envDir) {
     return envDir;

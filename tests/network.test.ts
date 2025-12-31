@@ -1,7 +1,8 @@
+import net from "net";
 import os from "os";
 import { describe, expect, it } from "bun:test";
 
-import { getLocalIP } from "../src/server/network";
+import { findAvailablePort, getLocalIP } from "../src/server/network";
 
 describe("getLocalIP", () => {
   it("prefers candidate interfaces and skips link-local addresses", () => {
@@ -92,6 +93,43 @@ describe("getLocalIP", () => {
       } else {
         process.env.THUNK_HOST = originalHost;
       }
+    }
+  });
+});
+
+describe("findAvailablePort", () => {
+  it("uses net checks when no override is provided", async () => {
+    const originalCreateServer = net.createServer;
+    let callCount = 0;
+    net.createServer = (() => {
+      callCount += 1;
+      let errorHandler: ((error: NodeJS.ErrnoException) => void) | undefined;
+
+      return {
+        unref: () => {},
+        once: (_event: string, handler: (error: NodeJS.ErrnoException) => void) => {
+          errorHandler = handler;
+        },
+        listen: (_port: number, _host: string, handler: () => void) => {
+          if (callCount === 1 && errorHandler) {
+            const error = new Error("busy") as NodeJS.ErrnoException;
+            error.code = "EADDRINUSE";
+            errorHandler(error);
+            return;
+          }
+          handler();
+        },
+        close: (handler?: () => void) => {
+          handler?.();
+        },
+      } as unknown as net.Server;
+    }) as typeof net.createServer;
+
+    try {
+      const port = await findAvailablePort(5000);
+      expect(port).toBe(5001);
+    } finally {
+      net.createServer = originalCreateServer;
     }
   });
 });
