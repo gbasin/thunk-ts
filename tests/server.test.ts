@@ -635,6 +635,42 @@ describe("handlers", () => {
     });
   });
 
+  it("builds and serves editor.js from TypeScript source", async () => {
+    await withTempDir(async (root) => {
+      const thunkDir = path.join(root, ".thunk");
+      const manager = new SessionManager(thunkDir);
+      const handlers = createHandlers({ thunkDir, manager });
+
+      const res = await handlers.handleAssets(
+        new Request("http://localhost/assets/editor.js"),
+        "editor.js",
+      );
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Content-Type")).toBe("text/javascript");
+
+      const js = await res.text();
+      expect(js.length).toBeGreaterThan(1000);
+      expect(js).toContain("ThunkEditor");
+      expect(js).toContain("customElements.define");
+    });
+  });
+
+  it("builds and serves list.js from TypeScript source", async () => {
+    await withTempDir(async (root) => {
+      const thunkDir = path.join(root, ".thunk");
+      const manager = new SessionManager(thunkDir);
+      const handlers = createHandlers({ thunkDir, manager });
+
+      const res = await handlers.handleAssets(
+        new Request("http://localhost/assets/list.js"),
+        "list.js",
+      );
+      expect(res.status).toBe(200);
+      const js = await res.text();
+      expect(js).toContain("ThunkList");
+    });
+  });
+
   it("idles when inactive and no user review", async () => {
     await withTempDir(async (root) => {
       const thunkDir = path.join(root, ".thunk");
