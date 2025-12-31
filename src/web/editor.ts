@@ -433,6 +433,18 @@ class ThunkEditor extends LitElement {
     if (this.readOnly || !this.editor || this.continuing) {
       return;
     }
+
+    // Check if content is unchanged
+    const currentContent = this.editor.getValue();
+    if (currentContent === this.lastLoadedContent) {
+      const confirmed = window.confirm(
+        "No changes detected. Running another turn will re-run the agents with the same content.\n\nContinue anyway?",
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+
     this.continuing = true;
     this.statusMessage = "Saving & running agents...";
     this.requestUpdate();
