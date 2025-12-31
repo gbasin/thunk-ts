@@ -99,7 +99,7 @@ class ThunkEditor extends LitElement {
       scrollBeyondLastLine: false,
       readOnly: this.readOnly,
       theme,
-      fontSize: 13,
+      fontSize: 16,
       lineNumbersMinChars: 3,
       glyphMargin: false,
       folding: false,

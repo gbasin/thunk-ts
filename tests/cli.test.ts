@@ -64,6 +64,23 @@ describe("CLI", () => {
     });
   });
 
+  it("init supports --thunk-dir=... form", async () => {
+    await withTempDir(async (root) => {
+      const repoRoot = path.resolve(import.meta.dir, "..");
+      const thunkDir = path.join(root, ".thunk-inline");
+
+      const result = runCli([`--thunk-dir=${thunkDir}`, "init", "Inline path"], repoRoot);
+
+      expect(result.exitCode).toBe(0);
+      const data = JSON.parse(result.stdout);
+      expect(data.session_id).toBeDefined();
+
+      const manager = new SessionManager(thunkDir);
+      const state = await manager.loadSession(data.session_id);
+      expect(state?.task).toBe("Inline path");
+    });
+  });
+
   it("list returns sessions", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
@@ -90,6 +107,33 @@ describe("CLI", () => {
       const data = JSON.parse(result.stdout);
       expect(data.session_id).toBe(sessionId);
       expect(data.turn).toBe(1);
+    });
+  });
+
+  it("status errors when --session is missing", async () => {
+    await withTempDir(async (root) => {
+      const repoRoot = path.resolve(import.meta.dir, "..");
+      const thunkDir = path.join(root, ".thunk-test");
+
+      const result = runCli(["--thunk-dir", thunkDir, "status"], repoRoot);
+      expect(result.exitCode).toBe(1);
+      const data = JSON.parse(result.stdout);
+      expect(data.error).toContain("Missing --session");
+    });
+  });
+
+  it("status errors when session does not exist", async () => {
+    await withTempDir(async (root) => {
+      const repoRoot = path.resolve(import.meta.dir, "..");
+      const thunkDir = path.join(root, ".thunk-test");
+
+      const result = runCli(
+        ["--thunk-dir", thunkDir, "status", "--session", "missing-session"],
+        repoRoot,
+      );
+      expect(result.exitCode).toBe(1);
+      const data = JSON.parse(result.stdout);
+      expect(data.error).toContain("missing-session");
     });
   });
 
@@ -159,6 +203,31 @@ describe("CLI", () => {
 
       const cont = runCli(["--thunk-dir", thunkDir, "continue", "--session", sessionId], repoRoot);
       expect(cont.exitCode).toBe(1);
+    });
+  });
+
+  it("continue advances turn from user_review", async () => {
+    await withTempDir(async (root) => {
+      const repoRoot = path.resolve(import.meta.dir, "..");
+      const thunkDir = path.join(root, ".thunk-test");
+      const manager = new SessionManager(thunkDir);
+      const state = await manager.createSession("Continue test");
+      state.phase = Phase.UserReview;
+      await manager.saveState(state);
+
+      const result = runCli(
+        ["--thunk-dir", thunkDir, "continue", "--session", state.sessionId],
+        repoRoot,
+      );
+
+      expect(result.exitCode).toBe(0);
+      const data = JSON.parse(result.stdout);
+      expect(data.turn).toBe(2);
+      expect(data.phase).toBe(Phase.Drafting);
+
+      const updated = await manager.loadSession(state.sessionId);
+      expect(updated?.turn).toBe(2);
+      expect(updated?.phase).toBe(Phase.Drafting);
     });
   });
 
@@ -339,6 +408,49 @@ process.exit(1);
     });
   });
 
+  it("wait reports web_error when daemon fails", async () => {
+    await withTempDir(async (root) => {
+      const thunkDir = path.join(root, ".thunk-test");
+      const manager = new SessionManager(thunkDir);
+      const state = await manager.createSession("Web error");
+      state.phase = Phase.UserReview;
+      await manager.saveState(state);
+
+      mock.module("../src/server/daemon", () => ({
+        isDaemonRunning: mock(async () => {
+          throw new Error("daemon down");
+        }),
+        startDaemon: mock(async () => ({ pid: 1, port: 2222 })),
+        stopDaemon: mock(async () => true),
+      }));
+
+      const logs: string[] = [];
+      const originalLog = console.log;
+      console.log = (message?: unknown) => {
+        logs.push(String(message ?? ""));
+      };
+
+      try {
+        const { runCliCommand } = await import("../src/cli");
+        await runCliCommand([
+          "node",
+          "thunk",
+          "--thunk-dir",
+          thunkDir,
+          "wait",
+          "--session",
+          state.sessionId,
+        ]);
+      } finally {
+        console.log = originalLog;
+        mock.restore();
+      }
+
+      const output = JSON.parse(logs[0]);
+      expect(output.web_error).toContain("daemon down");
+    });
+  });
+
   it("server status reports running", async () => {
     await withTempDir(async (root) => {
       const thunkDir = path.join(root, ".thunk-test");
@@ -375,6 +487,60 @@ process.exit(1);
       expect(output.running).toBe(true);
       expect(output.port).toBe(5555);
       expect(output.pid).toBe(999);
+    });
+  });
+
+  it("server status reports not running", async () => {
+    await withTempDir(async (root) => {
+      const repoRoot = path.resolve(import.meta.dir, "..");
+      const thunkDir = path.join(root, ".thunk-test");
+
+      const result = runCli(["--thunk-dir", thunkDir, "server", "status"], repoRoot);
+      expect(result.exitCode).toBe(0);
+      const data = JSON.parse(result.stdout);
+      expect(data.running).toBe(false);
+    });
+  });
+
+  it("server stop errors when not running", async () => {
+    await withTempDir(async (root) => {
+      const repoRoot = path.resolve(import.meta.dir, "..");
+      const thunkDir = path.join(root, ".thunk-test");
+
+      const result = runCli(["--thunk-dir", thunkDir, "server", "stop"], repoRoot);
+      expect(result.exitCode).toBe(1);
+      const data = JSON.parse(result.stdout);
+      expect(data.error).toContain("Server not running");
+    });
+  });
+
+  it("server start foreground errors when already running", async () => {
+    await withTempDir(async (root) => {
+      const repoRoot = path.resolve(import.meta.dir, "..");
+      const thunkDir = path.join(root, ".thunk-test");
+      await fs.mkdir(thunkDir, { recursive: true });
+      await fs.writeFile(
+        path.join(thunkDir, "server.json"),
+        JSON.stringify({ pid: process.pid, port: 7777 }),
+        "utf8",
+      );
+
+      const result = runCli(["--thunk-dir", thunkDir, "server", "start", "--foreground"], repoRoot);
+      expect(result.exitCode).toBe(1);
+      const data = JSON.parse(result.stdout);
+      expect(data.error).toContain("Server already running");
+    });
+  });
+
+  it("server errors on unknown action", async () => {
+    await withTempDir(async (root) => {
+      const repoRoot = path.resolve(import.meta.dir, "..");
+      const thunkDir = path.join(root, ".thunk-test");
+
+      const result = runCli(["--thunk-dir", thunkDir, "server", "bogus"], repoRoot);
+      expect(result.exitCode).toBe(1);
+      const data = JSON.parse(result.stdout);
+      expect(data.error).toContain("Unknown server action");
     });
   });
 
@@ -607,6 +773,34 @@ for (const line of lines) {
       expect(stats.isSymbolicLink()).toBe(true);
       const target = await fs.readlink(linkPath);
       expect(path.resolve(paths.root, target)).toBe(paths.turnFile(state.turn));
+    });
+  });
+
+  it("approve errors with unanswered questions", async () => {
+    await withTempDir(async (root) => {
+      const repoRoot = path.resolve(import.meta.dir, "..");
+      const thunkDir = path.join(root, ".thunk-test");
+      const manager = new SessionManager(thunkDir);
+      const state = await manager.createSession("Question test");
+      state.phase = Phase.UserReview;
+      await manager.saveState(state);
+
+      const paths = manager.getPaths(state.sessionId);
+      await fs.mkdir(path.dirname(paths.turnFile(state.turn)), { recursive: true });
+      await fs.writeFile(
+        paths.turnFile(state.turn),
+        "## Questions\n\n### Q1\n**Answer:**\n\n## Summary\nTBD\n",
+        "utf8",
+      );
+
+      const result = runCli(
+        ["--thunk-dir", thunkDir, "approve", "--session", state.sessionId],
+        repoRoot,
+      );
+
+      expect(result.exitCode).toBe(1);
+      const data = JSON.parse(result.stdout);
+      expect(data.error).toContain("Cannot approve with unanswered questions");
     });
   });
 
