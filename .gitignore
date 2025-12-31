@@ -11,3 +11,4 @@ coverage/
 /.thunk/server.json
 /.thunk/token
 /.thunk/server.log
+/.thunk/task-temp.md
