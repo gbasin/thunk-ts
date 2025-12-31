@@ -3,7 +3,7 @@ import os from "os";
 import path from "path";
 import { describe, expect, it } from "bun:test";
 
-import { AgentStatus, Phase, SessionPaths, SessionState, ThunkConfig } from "../src/models";
+import { AgentStatus, Phase, SessionPaths, SessionState, Pl4nConfig } from "../src/models";
 
 describe("Phase", () => {
   it("has expected values", () => {
@@ -72,7 +72,7 @@ describe("SessionState", () => {
 
 describe("SessionPaths", () => {
   it("builds expected paths", () => {
-    const root = path.join("/tmp", "thunk", "session");
+    const root = path.join("/tmp", "pl4n", "session");
     const paths = SessionPaths.fromRoot(root);
 
     expect(paths.root).toBe(root);
@@ -92,9 +92,9 @@ describe("SessionPaths", () => {
   });
 });
 
-describe("ThunkConfig", () => {
+describe("Pl4nConfig", () => {
   it("builds default config", () => {
-    const config = ThunkConfig.default();
+    const config = Pl4nConfig.default();
     expect(config.agents.length).toBe(2);
     expect(config.agents[0].id).toBe("opus");
     expect(config.agents[0].claude?.allowedTools).toContain("Read");
@@ -110,10 +110,10 @@ describe("ThunkConfig", () => {
   });
 
   it("loads config from yaml", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "thunk-config-"));
-    const thunkDir = path.join(root, ".thunk");
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pl4n-config-"));
+    const pl4nDir = path.join(root, ".pl4n");
     try {
-      await fs.mkdir(thunkDir, { recursive: true });
+      await fs.mkdir(pl4nDir, { recursive: true });
       const yaml = [
         "claude:",
         "  allowed_tools:",
@@ -155,9 +155,9 @@ describe("ThunkConfig", () => {
         "timeout: 120",
         "",
       ].join("\n");
-      await fs.writeFile(path.join(thunkDir, "thunk.yaml"), yaml, "utf8");
+      await fs.writeFile(path.join(pl4nDir, "pl4n.yaml"), yaml, "utf8");
 
-      const config = await ThunkConfig.loadFromThunkDir(thunkDir);
+      const config = await Pl4nConfig.loadFromPl4nDir(pl4nDir);
       expect(config.agents.length).toBe(2);
       expect(config.agents[0]).toEqual({
         id: "alpha",
@@ -199,10 +199,10 @@ describe("ThunkConfig", () => {
   });
 
   it("applies defaults when agents and synthesizer are omitted", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "thunk-config-"));
-    const thunkDir = path.join(root, ".thunk");
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pl4n-config-"));
+    const pl4nDir = path.join(root, ".pl4n");
     try {
-      await fs.mkdir(thunkDir, { recursive: true });
+      await fs.mkdir(pl4nDir, { recursive: true });
       const yaml = [
         "claude:",
         "  allowed_tools:",
@@ -211,9 +211,9 @@ describe("ThunkConfig", () => {
         "  search: false",
         "",
       ].join("\n");
-      await fs.writeFile(path.join(thunkDir, "thunk.yaml"), yaml, "utf8");
+      await fs.writeFile(path.join(pl4nDir, "pl4n.yaml"), yaml, "utf8");
 
-      const config = await ThunkConfig.loadFromThunkDir(thunkDir);
+      const config = await Pl4nConfig.loadFromPl4nDir(pl4nDir);
       expect(config.agents.length).toBe(2);
       const claudeAgent = config.agents.find((agent) => agent.type === "claude");
       const codexAgent = config.agents.find((agent) => agent.type === "codex");
@@ -227,9 +227,9 @@ describe("ThunkConfig", () => {
   });
 
   it("falls back to defaults when config is missing", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "thunk-config-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pl4n-config-"));
     try {
-      const config = await ThunkConfig.loadFromThunkDir(path.join(root, ".thunk"));
+      const config = await Pl4nConfig.loadFromPl4nDir(path.join(root, ".pl4n"));
       expect(config.agents.length).toBe(2);
       expect(config.agents[0].id).toBe("opus");
       expect(config.agents[1].id).toBe("codex");
@@ -241,14 +241,14 @@ describe("ThunkConfig", () => {
   });
 
   it("rejects invalid config", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "thunk-config-"));
-    const thunkDir = path.join(root, ".thunk");
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pl4n-config-"));
+    const pl4nDir = path.join(root, ".pl4n");
     try {
-      await fs.mkdir(thunkDir, { recursive: true });
-      await fs.writeFile(path.join(thunkDir, "thunk.yaml"), "agents: []\n", "utf8");
+      await fs.mkdir(pl4nDir, { recursive: true });
+      await fs.writeFile(path.join(pl4nDir, "pl4n.yaml"), "agents: []\n", "utf8");
       let error: Error | undefined;
       try {
-        await ThunkConfig.loadFromThunkDir(thunkDir);
+        await Pl4nConfig.loadFromPl4nDir(pl4nDir);
       } catch (err) {
         error = err as Error;
       }

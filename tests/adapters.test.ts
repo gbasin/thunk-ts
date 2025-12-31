@@ -10,7 +10,7 @@ import { CodexCLIAdapter, CodexCLISyncAdapter } from "../src/adapters/codex";
 import { AgentStatus } from "../src/models";
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "thunk-adapter-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "pl4n-adapter-"));
   try {
     return await fn(root);
   } finally {

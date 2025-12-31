@@ -47,7 +47,7 @@ automation with Playwright. Start server, take screenshots, verify DOM state.
 
 ## Project Overview
 
-Thunk is a multi-agent ensemble planning CLI. It orchestrates multiple AI agents
+Pl4n is a multi-agent ensemble planning CLI. It orchestrates multiple AI agents
 (Claude Code, OpenAI Codex) to collaboratively create implementation plans for
 tasks, with human-in-the-loop review.
 
@@ -55,14 +55,14 @@ See `README.md` for full documentation.
 
 ## Commands
 
-thunk init "task description"        # Start planning session
-thunk wait --session <id>            # Block until turn complete
-thunk continue --session <id>        # Start next turn after user edits
-thunk approve --session <id>         # Lock plan as final
-thunk status --session <id>          # Check progress
-thunk list                           # List all sessions
-thunk clean --session <id>           # Remove session
-thunk diff --session <id>            # Show changes between turns
+pl4n init "task description"        # Start planning session
+pl4n wait --session <id>            # Block until turn complete
+pl4n continue --session <id>        # Start next turn after user edits
+pl4n approve --session <id>         # Lock plan as final
+pl4n status --session <id>          # Check progress
+pl4n list                           # List all sessions
+pl4n clean --session <id>           # Remove session
+pl4n diff --session <id>            # Show changes between turns
 
 ## Architecture
 
@@ -80,7 +80,7 @@ src/
 
 ## Session File Structure
 
-.thunk/sessions/swift-river/      # Human-friendly session ID
+.pl4n/sessions/swift-river/      # Human-friendly session ID
 ├── meta.yaml                     # Task description, timestamp
 ├── state.yaml                    # Turn, phase, agent_plan_ids mapping
 ├── sunny-glade.md                # Agent's persistent plan (plan_id)

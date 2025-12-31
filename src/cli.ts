@@ -2,7 +2,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import sade from "sade";
 
-import { Phase, ThunkConfig, type SessionState } from "./models";
+import { Phase, Pl4nConfig, type SessionState } from "./models";
 import { TurnOrchestrator } from "./orchestrator";
 import { SessionManager } from "./session";
 import { ensureGlobalToken } from "./server/auth";
@@ -17,7 +17,7 @@ type TurnOrchestratorInstance = {
 
 type TurnOrchestratorCtor = new (
   manager: SessionManager,
-  config: ThunkConfig,
+  config: Pl4nConfig,
 ) => TurnOrchestratorInstance;
 
 export type CliDeps = {
@@ -35,9 +35,9 @@ function outputJson(data: Record<string, unknown>, pretty = false): void {
   console.log(output);
 }
 
-function resolveThunkDir(opts: Record<string, unknown>, fallback?: string): string | undefined {
+function resolvePl4nDir(opts: Record<string, unknown>, fallback?: string): string | undefined {
   return (
-    (opts.thunkDir as string | undefined) ?? (opts["thunk-dir"] as string | undefined) ?? fallback
+    (opts.pl4nDir as string | undefined) ?? (opts["pl4n-dir"] as string | undefined) ?? fallback
   );
 }
 
@@ -46,7 +46,7 @@ function resolvePretty(opts: Record<string, unknown>, fallback = false): boolean
 }
 
 function resolveEnvPort(): number | undefined {
-  const value = process.env.THUNK_PORT;
+  const value = process.env.PL4N_PORT;
   if (!value) {
     return undefined;
   }
@@ -56,11 +56,11 @@ function resolveEnvPort(): number | undefined {
 
 function extractGlobalOptions(argv: string[]): {
   argv: string[];
-  thunkDir?: string;
+  pl4nDir?: string;
   pretty: boolean;
 } {
   const cleaned: string[] = [];
-  let thunkDir: string | undefined;
+  let pl4nDir: string | undefined;
   let pretty = false;
 
   for (let i = 2; i < argv.length; i += 1) {
@@ -69,13 +69,13 @@ function extractGlobalOptions(argv: string[]): {
       pretty = true;
       continue;
     }
-    if (arg === "--thunk-dir") {
-      thunkDir = argv[i + 1];
+    if (arg === "--pl4n-dir") {
+      pl4nDir = argv[i + 1];
       i += 1;
       continue;
     }
-    if (arg.startsWith("--thunk-dir=")) {
-      thunkDir = arg.split("=", 2)[1];
+    if (arg.startsWith("--pl4n-dir=")) {
+      pl4nDir = arg.split("=", 2)[1];
       continue;
     }
     if ((arg === "--file" || arg === "-f") && argv[i + 1] === "-") {
@@ -86,7 +86,7 @@ function extractGlobalOptions(argv: string[]): {
     cleaned.push(arg);
   }
 
-  return { argv: [argv[0], argv[1], ...cleaned], thunkDir, pretty };
+  return { argv: [argv[0], argv[1], ...cleaned], pl4nDir, pretty };
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -104,7 +104,7 @@ function exitWithError(data: Record<string, unknown>, pretty: boolean): never {
 }
 
 function isWebEnabled(): boolean {
-  const value = process.env.THUNK_WEB;
+  const value = process.env.PL4N_WEB;
   if (value === undefined) {
     return true;
   }
@@ -143,9 +143,9 @@ async function attachEditUrl(
     return;
   }
   try {
-    let status = await deps.isDaemonRunning(manager.thunkDir);
+    let status = await deps.isDaemonRunning(manager.pl4nDir);
     if (!status.running) {
-      const started = await deps.startDaemon(manager.thunkDir);
+      const started = await deps.startDaemon(manager.pl4nDir);
       status = { running: true, port: started.port, pid: started.pid };
     }
     if (!status.port) {
@@ -166,9 +166,9 @@ async function attachEditUrl(
   }
 }
 
-async function loadConfig(pretty: boolean, thunkDir: string): Promise<ThunkConfig> {
+async function loadConfig(pretty: boolean, pl4nDir: string): Promise<Pl4nConfig> {
   try {
-    return await ThunkConfig.loadFromThunkDir(thunkDir);
+    return await Pl4nConfig.loadFromPl4nDir(pl4nDir);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to load config";
     exitWithError({ error: message }, pretty);
@@ -179,7 +179,7 @@ async function loadSessionConfig(
   manager: SessionManager,
   sessionId: string,
   pretty: boolean,
-): Promise<ThunkConfig> {
+): Promise<Pl4nConfig> {
   try {
     const snapshot = await manager.loadConfigSnapshot(sessionId);
     if (snapshot) {
@@ -190,7 +190,7 @@ async function loadSessionConfig(
     exitWithError({ error: message }, pretty);
   }
 
-  return await loadConfig(pretty, manager.thunkDir);
+  return await loadConfig(pretty, manager.pl4nDir);
 }
 
 async function loadSessionOrExit(
@@ -214,10 +214,10 @@ async function loadSessionOrExit(
 function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
   const globalOptions = extractGlobalOptions(argv);
   const deps = resolveDeps(depsOverrides);
-  const prog = sade("thunk");
+  const prog = sade("pl4n");
 
   prog
-    .option("--thunk-dir", "Path to .thunk directory (default: .thunk in current dir)")
+    .option("--pl4n-dir", "Path to .pl4n directory (default: .pl4n in current dir)")
     .option("--pretty", "Pretty print JSON output");
 
   prog
@@ -225,9 +225,9 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
     .describe("Start a new planning session")
     .option("--file, -f <path>", "Read task description from file (use - for stdin)")
     .action(async (task: string | undefined, opts: Record<string, unknown>) => {
-      const manager = new SessionManager(resolveThunkDir(opts, globalOptions.thunkDir));
+      const manager = new SessionManager(resolvePl4nDir(opts, globalOptions.pl4nDir));
       const pretty = resolvePretty(opts, globalOptions.pretty);
-      const config = await loadConfig(pretty, manager.thunkDir);
+      const config = await loadConfig(pretty, manager.pl4nDir);
 
       const fileOpt = opts.file ?? opts.f;
       let filePath: string | undefined;
@@ -284,7 +284,7 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
     .command("list")
     .describe("List all planning sessions")
     .action(async (opts: Record<string, unknown>) => {
-      const manager = new SessionManager(resolveThunkDir(opts, globalOptions.thunkDir));
+      const manager = new SessionManager(resolvePl4nDir(opts, globalOptions.pl4nDir));
       const pretty = resolvePretty(opts, globalOptions.pretty);
 
       const sessions = await manager.listSessions();
@@ -307,7 +307,7 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
     .describe("Check session status without blocking")
     .option("--session", "Session ID")
     .action(async (opts: Record<string, unknown>) => {
-      const manager = new SessionManager(resolveThunkDir(opts, globalOptions.thunkDir));
+      const manager = new SessionManager(resolvePl4nDir(opts, globalOptions.pl4nDir));
       const pretty = resolvePretty(opts, globalOptions.pretty);
       const sessionId = opts.session as string | undefined;
 
@@ -341,7 +341,7 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
     .option("--session", "Session ID")
     .option("--timeout", "Timeout in seconds")
     .action(async (opts: Record<string, unknown>) => {
-      const manager = new SessionManager(resolveThunkDir(opts, globalOptions.thunkDir));
+      const manager = new SessionManager(resolvePl4nDir(opts, globalOptions.pl4nDir));
       const pretty = resolvePretty(opts, globalOptions.pretty);
       const sessionId = opts.session as string | undefined;
 
@@ -424,7 +424,7 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
             turn: updatedState.turn,
             phase: updatedState.phase,
             error: "Turn failed",
-            hint: "Check agent logs in .thunk/sessions/<id>/agents/",
+            hint: "Check agent logs in .pl4n/sessions/<id>/agents/",
           };
           if (Object.keys(updatedState.agentErrors).length > 0) {
             errorResult.agent_errors = updatedState.agentErrors;
@@ -449,34 +449,34 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
     .describe("Manage the web editor server")
     .option("--foreground", "Run server in foreground")
     .action(async (action: string | undefined, opts: Record<string, unknown>) => {
-      const manager = new SessionManager(resolveThunkDir(opts, globalOptions.thunkDir));
+      const manager = new SessionManager(resolvePl4nDir(opts, globalOptions.pl4nDir));
       const pretty = resolvePretty(opts, globalOptions.pretty);
       const mode = (action ?? "status").toLowerCase();
       const portOverride = resolveEnvPort();
 
       if (mode === "start") {
         if (opts.foreground) {
-          const running = await deps.isDaemonRunning(manager.thunkDir);
+          const running = await deps.isDaemonRunning(manager.pl4nDir);
           if (running.running) {
             exitWithError({ error: "Server already running" }, pretty);
           }
           const port = portOverride ?? (await findAvailablePort(3456));
-          const token = await ensureGlobalToken(manager.thunkDir);
+          const token = await ensureGlobalToken(manager.pl4nDir);
           const url = `http://${getLocalIP()}:${port}/list?t=${token}`;
           outputJson({ running: true, foreground: true, port, url }, pretty);
-          await deps.startServer({ thunkDir: manager.thunkDir, port });
+          await deps.startServer({ pl4nDir: manager.pl4nDir, port });
           return;
         }
 
-        let status = await deps.isDaemonRunning(manager.thunkDir);
+        let status = await deps.isDaemonRunning(manager.pl4nDir);
         if (!status.running) {
           const started = await deps.startDaemon(
-            manager.thunkDir,
+            manager.pl4nDir,
             portOverride === undefined ? {} : { port: portOverride },
           );
           status = { running: true, port: started.port, pid: started.pid };
         }
-        const token = await ensureGlobalToken(manager.thunkDir);
+        const token = await ensureGlobalToken(manager.pl4nDir);
         const url = status.port ? `http://${getLocalIP()}:${status.port}/list?t=${token}` : null;
         outputJson(
           {
@@ -491,7 +491,7 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
       }
 
       if (mode === "stop") {
-        const stopped = await deps.stopDaemon(manager.thunkDir);
+        const stopped = await deps.stopDaemon(manager.pl4nDir);
         if (!stopped) {
           exitWithError({ error: "Server not running" }, pretty);
         }
@@ -500,12 +500,12 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
       }
 
       if (mode === "status") {
-        const status = await deps.isDaemonRunning(manager.thunkDir);
+        const status = await deps.isDaemonRunning(manager.pl4nDir);
         if (!status.running) {
           outputJson({ running: false }, pretty);
           return;
         }
-        const token = await ensureGlobalToken(manager.thunkDir);
+        const token = await ensureGlobalToken(manager.pl4nDir);
         const url = status.port ? `http://${getLocalIP()}:${status.port}/list?t=${token}` : null;
         outputJson(
           {
@@ -527,7 +527,7 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
     .describe("User done editing, start next turn")
     .option("--session", "Session ID")
     .action(async (opts: Record<string, unknown>) => {
-      const manager = new SessionManager(resolveThunkDir(opts, globalOptions.thunkDir));
+      const manager = new SessionManager(resolvePl4nDir(opts, globalOptions.pl4nDir));
       const pretty = resolvePretty(opts, globalOptions.pretty);
       const sessionId = opts.session as string | undefined;
 
@@ -566,7 +566,7 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
     .describe("Lock current plan as final")
     .option("--session", "Session ID")
     .action(async (opts: Record<string, unknown>) => {
-      const manager = new SessionManager(resolveThunkDir(opts, globalOptions.thunkDir));
+      const manager = new SessionManager(resolvePl4nDir(opts, globalOptions.pl4nDir));
       const pretty = resolvePretty(opts, globalOptions.pretty);
       const sessionId = opts.session as string | undefined;
 
@@ -626,7 +626,7 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
     .describe("Remove session and its data")
     .option("--session", "Session ID")
     .action(async (opts: Record<string, unknown>) => {
-      const manager = new SessionManager(resolveThunkDir(opts, globalOptions.thunkDir));
+      const manager = new SessionManager(resolvePl4nDir(opts, globalOptions.pl4nDir));
       const pretty = resolvePretty(opts, globalOptions.pretty);
       const sessionId = opts.session as string | undefined;
 
@@ -646,7 +646,7 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
     .describe("Show changes between turns")
     .option("--session", "Session ID")
     .action(async (opts: Record<string, unknown>) => {
-      const manager = new SessionManager(resolveThunkDir(opts, globalOptions.thunkDir));
+      const manager = new SessionManager(resolvePl4nDir(opts, globalOptions.pl4nDir));
       const pretty = resolvePretty(opts, globalOptions.pretty);
       const sessionId = opts.session as string | undefined;
 

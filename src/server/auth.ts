@@ -20,8 +20,8 @@ export function generateToken(): string {
   return crypto.randomBytes(12).toString("base64url");
 }
 
-export async function ensureGlobalToken(thunkDir: string): Promise<string> {
-  const tokenPath = path.join(thunkDir, "token");
+export async function ensureGlobalToken(pl4nDir: string): Promise<string> {
+  const tokenPath = path.join(pl4nDir, "token");
   try {
     const existing = (await fs.readFile(tokenPath, "utf8")).trim();
     if (existing) {
@@ -32,19 +32,16 @@ export async function ensureGlobalToken(thunkDir: string): Promise<string> {
   }
 
   const token = generateToken();
-  await fs.mkdir(thunkDir, { recursive: true });
+  await fs.mkdir(pl4nDir, { recursive: true });
   await fs.writeFile(tokenPath, `${token}\n`, "utf8");
   return token;
 }
 
-export async function validateGlobalToken(
-  token: string | null,
-  thunkDir: string,
-): Promise<boolean> {
+export async function validateGlobalToken(token: string | null, pl4nDir: string): Promise<boolean> {
   if (!token) {
     return false;
   }
-  const tokenPath = path.join(thunkDir, "token");
+  const tokenPath = path.join(pl4nDir, "token");
   try {
     const stored = (await fs.readFile(tokenPath, "utf8")).trim();
     return timingSafeEqual(token, stored);

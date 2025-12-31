@@ -26,7 +26,7 @@ function runCli(args: string[], cwd: string) {
 }
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "thunk-cli-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "pl4n-cli-"));
   try {
     return await fn(root);
   } finally {
@@ -54,9 +54,9 @@ describe("CLI", () => {
   it("init creates a session", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
-      const result = runCli(["--thunk-dir", thunkDir, "init", "Add caching"], repoRoot);
+      const result = runCli(["--pl4n-dir", pl4nDir, "init", "Add caching"], repoRoot);
 
       expect(result.exitCode).toBe(0);
       const data = JSON.parse(result.stdout);
@@ -65,18 +65,18 @@ describe("CLI", () => {
     });
   });
 
-  it("init supports --thunk-dir=... form", async () => {
+  it("init supports --pl4n-dir=... form", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-inline");
+      const pl4nDir = path.join(root, ".pl4n-inline");
 
-      const result = runCli([`--thunk-dir=${thunkDir}`, "init", "Inline path"], repoRoot);
+      const result = runCli([`--pl4n-dir=${pl4nDir}`, "init", "Inline path"], repoRoot);
 
       expect(result.exitCode).toBe(0);
       const data = JSON.parse(result.stdout);
       expect(data.session_id).toBeDefined();
 
-      const manager = new SessionManager(thunkDir);
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.loadSession(data.session_id);
       expect(state?.task).toBe("Inline path");
     });
@@ -85,12 +85,12 @@ describe("CLI", () => {
   it("list returns sessions", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
-      runCli(["--thunk-dir", thunkDir, "init", "Feature 1"], repoRoot);
-      runCli(["--thunk-dir", thunkDir, "init", "Feature 2"], repoRoot);
+      runCli(["--pl4n-dir", pl4nDir, "init", "Feature 1"], repoRoot);
+      runCli(["--pl4n-dir", pl4nDir, "init", "Feature 2"], repoRoot);
 
-      const result = runCli(["--thunk-dir", thunkDir, "list"], repoRoot);
+      const result = runCli(["--pl4n-dir", pl4nDir, "list"], repoRoot);
       const data = JSON.parse(result.stdout);
       expect(data.sessions.length).toBe(2);
     });
@@ -99,12 +99,12 @@ describe("CLI", () => {
   it("status returns session data", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
-      const init = runCli(["--thunk-dir", thunkDir, "init", "Test feature"], repoRoot);
+      const init = runCli(["--pl4n-dir", pl4nDir, "init", "Test feature"], repoRoot);
       const sessionId = JSON.parse(init.stdout).session_id as string;
 
-      const result = runCli(["--thunk-dir", thunkDir, "status", "--session", sessionId], repoRoot);
+      const result = runCli(["--pl4n-dir", pl4nDir, "status", "--session", sessionId], repoRoot);
       const data = JSON.parse(result.stdout);
       expect(data.session_id).toBe(sessionId);
       expect(data.turn).toBe(1);
@@ -114,9 +114,9 @@ describe("CLI", () => {
   it("status errors when --session is missing", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
-      const result = runCli(["--thunk-dir", thunkDir, "status"], repoRoot);
+      const result = runCli(["--pl4n-dir", pl4nDir, "status"], repoRoot);
       expect(result.exitCode).toBe(1);
       const data = JSON.parse(result.stdout);
       expect(data.error).toContain("Missing --session");
@@ -126,10 +126,10 @@ describe("CLI", () => {
   it("status errors when session does not exist", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
       const result = runCli(
-        ["--thunk-dir", thunkDir, "status", "--session", "missing-session"],
+        ["--pl4n-dir", pl4nDir, "status", "--session", "missing-session"],
         repoRoot,
       );
       expect(result.exitCode).toBe(1);
@@ -141,14 +141,14 @@ describe("CLI", () => {
   it("status includes agent errors when present", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n-test");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Test feature");
       state.agentErrors = { codex: "error: draft failed" };
       await manager.saveState(state);
 
       const result = runCli(
-        ["--thunk-dir", thunkDir, "status", "--session", state.sessionId],
+        ["--pl4n-dir", pl4nDir, "status", "--session", state.sessionId],
         repoRoot,
       );
       const data = JSON.parse(result.stdout);
@@ -159,16 +159,16 @@ describe("CLI", () => {
   it("clean removes sessions", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
-      const init = runCli(["--thunk-dir", thunkDir, "init", "Test feature"], repoRoot);
+      const init = runCli(["--pl4n-dir", pl4nDir, "init", "Test feature"], repoRoot);
       const sessionId = JSON.parse(init.stdout).session_id as string;
 
-      const result = runCli(["--thunk-dir", thunkDir, "clean", "--session", sessionId], repoRoot);
+      const result = runCli(["--pl4n-dir", pl4nDir, "clean", "--session", sessionId], repoRoot);
       const data = JSON.parse(result.stdout);
       expect(data.cleaned).toBe(true);
 
-      const status = runCli(["--thunk-dir", thunkDir, "status", "--session", sessionId], repoRoot);
+      const status = runCli(["--pl4n-dir", pl4nDir, "status", "--session", sessionId], repoRoot);
       expect(status.exitCode).toBe(1);
     });
   });
@@ -176,12 +176,9 @@ describe("CLI", () => {
   it("pretty output uses indentation", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
-      const result = runCli(
-        ["--thunk-dir", thunkDir, "--pretty", "init", "Test feature"],
-        repoRoot,
-      );
+      const result = runCli(["--pl4n-dir", pl4nDir, "--pretty", "init", "Test feature"], repoRoot);
 
       expect(result.stdout).toContain("\n");
       expect(result.stdout).toContain("  ");
@@ -191,18 +188,15 @@ describe("CLI", () => {
   it("approve and continue require user_review", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
-      const init = runCli(["--thunk-dir", thunkDir, "init", "Test feature"], repoRoot);
+      const init = runCli(["--pl4n-dir", pl4nDir, "init", "Test feature"], repoRoot);
       const sessionId = JSON.parse(init.stdout).session_id as string;
 
-      const approve = runCli(
-        ["--thunk-dir", thunkDir, "approve", "--session", sessionId],
-        repoRoot,
-      );
+      const approve = runCli(["--pl4n-dir", pl4nDir, "approve", "--session", sessionId], repoRoot);
       expect(approve.exitCode).toBe(1);
 
-      const cont = runCli(["--thunk-dir", thunkDir, "continue", "--session", sessionId], repoRoot);
+      const cont = runCli(["--pl4n-dir", pl4nDir, "continue", "--session", sessionId], repoRoot);
       expect(cont.exitCode).toBe(1);
     });
   });
@@ -210,14 +204,14 @@ describe("CLI", () => {
   it("continue advances turn from user_review", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n-test");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Continue test");
       state.phase = Phase.UserReview;
       await manager.saveState(state);
 
       const result = runCli(
-        ["--thunk-dir", thunkDir, "continue", "--session", state.sessionId],
+        ["--pl4n-dir", pl4nDir, "continue", "--session", state.sessionId],
         repoRoot,
       );
 
@@ -235,15 +229,15 @@ describe("CLI", () => {
   it("wait returns user_review details", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n-test");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Test feature");
       state.phase = Phase.UserReview;
       state.agentErrors = { codex: "error: draft failed" };
       await manager.saveState(state);
 
       const result = runCli(
-        ["--thunk-dir", thunkDir, "wait", "--session", state.sessionId],
+        ["--pl4n-dir", pl4nDir, "wait", "--session", state.sessionId],
         repoRoot,
       );
       const data = JSON.parse(result.stdout);
@@ -256,14 +250,14 @@ describe("CLI", () => {
   it("wait returns approved details", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n-test");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Test feature");
       state.phase = Phase.Approved;
       await manager.saveState(state);
 
       const result = runCli(
-        ["--thunk-dir", thunkDir, "wait", "--session", state.sessionId],
+        ["--pl4n-dir", pl4nDir, "wait", "--session", state.sessionId],
         repoRoot,
       );
       const data = JSON.parse(result.stdout);
@@ -275,7 +269,7 @@ describe("CLI", () => {
   it("wait runs a drafting turn", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
       const binDir = path.join(root, "bin");
       await fs.mkdir(binDir, { recursive: true });
 
@@ -296,10 +290,10 @@ process.exit(1);
       );
 
       await withPatchedPath(binDir, async () => {
-        const init = runCli(["--thunk-dir", thunkDir, "init", "Test feature"], repoRoot);
+        const init = runCli(["--pl4n-dir", pl4nDir, "init", "Test feature"], repoRoot);
         const sessionId = JSON.parse(init.stdout).session_id as string;
 
-        const result = runCli(["--thunk-dir", thunkDir, "wait", "--session", sessionId], repoRoot);
+        const result = runCli(["--pl4n-dir", pl4nDir, "wait", "--session", sessionId], repoRoot);
         const data = JSON.parse(result.stdout);
 
         expect(data.phase).toBe(Phase.UserReview);
@@ -311,8 +305,8 @@ process.exit(1);
 
   it("wait emits edit_url when web enabled", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n-test");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Web test");
       state.phase = Phase.UserReview;
       await manager.saveState(state);
@@ -332,21 +326,21 @@ process.exit(1);
         logs.push(String(message ?? ""));
       };
 
-      const originalEnv = process.env.THUNK_HOST;
-      process.env.THUNK_HOST = "127.0.0.1";
+      const originalEnv = process.env.PL4N_HOST;
+      process.env.PL4N_HOST = "127.0.0.1";
 
       try {
         const { runCliCommand } = await import("../src/cli");
         await runCliCommand(
-          ["node", "thunk", "--thunk-dir", thunkDir, "wait", "--session", state.sessionId],
+          ["node", "pl4n", "--pl4n-dir", pl4nDir, "wait", "--session", state.sessionId],
           deps,
         );
       } finally {
         console.log = originalLog;
         if (originalEnv === undefined) {
-          delete process.env.THUNK_HOST;
+          delete process.env.PL4N_HOST;
         } else {
-          process.env.THUNK_HOST = originalEnv;
+          process.env.PL4N_HOST = originalEnv;
         }
       }
 
@@ -357,10 +351,10 @@ process.exit(1);
     });
   });
 
-  it("wait skips edit_url when THUNK_WEB=0", async () => {
+  it("wait skips edit_url when PL4N_WEB=0", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n-test");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Web test");
       state.phase = Phase.UserReview;
       await manager.saveState(state);
@@ -371,16 +365,16 @@ process.exit(1);
         logs.push(String(message ?? ""));
       };
 
-      const originalWeb = process.env.THUNK_WEB;
-      process.env.THUNK_WEB = "0";
+      const originalWeb = process.env.PL4N_WEB;
+      process.env.PL4N_WEB = "0";
 
       try {
         const { runCliCommand } = await import("../src/cli");
         await runCliCommand([
           "node",
-          "thunk",
-          "--thunk-dir",
-          thunkDir,
+          "pl4n",
+          "--pl4n-dir",
+          pl4nDir,
           "wait",
           "--session",
           state.sessionId,
@@ -388,9 +382,9 @@ process.exit(1);
       } finally {
         console.log = originalLog;
         if (originalWeb === undefined) {
-          delete process.env.THUNK_WEB;
+          delete process.env.PL4N_WEB;
         } else {
-          process.env.THUNK_WEB = originalWeb;
+          process.env.PL4N_WEB = originalWeb;
         }
       }
 
@@ -401,8 +395,8 @@ process.exit(1);
 
   it("wait reports web_error when daemon fails", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n-test");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Web error");
       state.phase = Phase.UserReview;
       await manager.saveState(state);
@@ -424,7 +418,7 @@ process.exit(1);
       try {
         const { runCliCommand } = await import("../src/cli");
         await runCliCommand(
-          ["node", "thunk", "--thunk-dir", thunkDir, "wait", "--session", state.sessionId],
+          ["node", "pl4n", "--pl4n-dir", pl4nDir, "wait", "--session", state.sessionId],
           deps,
         );
       } finally {
@@ -438,7 +432,7 @@ process.exit(1);
 
   it("server status reports running", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
       const deps: Partial<CliDeps> = {
         isDaemonRunning: async () => ({ running: true, port: 5555, pid: 999 }),
@@ -452,18 +446,18 @@ process.exit(1);
         logs.push(String(message ?? ""));
       };
 
-      const originalHost = process.env.THUNK_HOST;
-      process.env.THUNK_HOST = "127.0.0.1";
+      const originalHost = process.env.PL4N_HOST;
+      process.env.PL4N_HOST = "127.0.0.1";
 
       try {
         const { runCliCommand } = await import("../src/cli");
-        await runCliCommand(["node", "thunk", "--thunk-dir", thunkDir, "server", "status"], deps);
+        await runCliCommand(["node", "pl4n", "--pl4n-dir", pl4nDir, "server", "status"], deps);
       } finally {
         console.log = originalLog;
         if (originalHost === undefined) {
-          delete process.env.THUNK_HOST;
+          delete process.env.PL4N_HOST;
         } else {
-          process.env.THUNK_HOST = originalHost;
+          process.env.PL4N_HOST = originalHost;
         }
       }
 
@@ -477,9 +471,9 @@ process.exit(1);
   it("server status reports not running", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
-      const result = runCli(["--thunk-dir", thunkDir, "server", "status"], repoRoot);
+      const result = runCli(["--pl4n-dir", pl4nDir, "server", "status"], repoRoot);
       expect(result.exitCode).toBe(0);
       const data = JSON.parse(result.stdout);
       expect(data.running).toBe(false);
@@ -489,9 +483,9 @@ process.exit(1);
   it("server stop errors when not running", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
-      const result = runCli(["--thunk-dir", thunkDir, "server", "stop"], repoRoot);
+      const result = runCli(["--pl4n-dir", pl4nDir, "server", "stop"], repoRoot);
       expect(result.exitCode).toBe(1);
       const data = JSON.parse(result.stdout);
       expect(data.error).toContain("Server not running");
@@ -501,15 +495,15 @@ process.exit(1);
   it("server start foreground errors when already running", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
-      await fs.mkdir(thunkDir, { recursive: true });
+      const pl4nDir = path.join(root, ".pl4n-test");
+      await fs.mkdir(pl4nDir, { recursive: true });
       await fs.writeFile(
-        path.join(thunkDir, "server.json"),
+        path.join(pl4nDir, "server.json"),
         JSON.stringify({ pid: process.pid, port: 7777 }),
         "utf8",
       );
 
-      const result = runCli(["--thunk-dir", thunkDir, "server", "start", "--foreground"], repoRoot);
+      const result = runCli(["--pl4n-dir", pl4nDir, "server", "start", "--foreground"], repoRoot);
       expect(result.exitCode).toBe(1);
       const data = JSON.parse(result.stdout);
       expect(data.error).toContain("Server already running");
@@ -519,9 +513,9 @@ process.exit(1);
   it("server errors on unknown action", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
-      const result = runCli(["--thunk-dir", thunkDir, "server", "bogus"], repoRoot);
+      const result = runCli(["--pl4n-dir", pl4nDir, "server", "bogus"], repoRoot);
       expect(result.exitCode).toBe(1);
       const data = JSON.parse(result.stdout);
       expect(data.error).toContain("Unknown server action");
@@ -530,7 +524,7 @@ process.exit(1);
 
   it("server start and stop use daemon helpers", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
       const deps: Partial<CliDeps> = {
         isDaemonRunning: async () => ({ running: false }),
@@ -544,19 +538,19 @@ process.exit(1);
         logs.push(String(message ?? ""));
       };
 
-      const originalHost = process.env.THUNK_HOST;
-      process.env.THUNK_HOST = "127.0.0.1";
+      const originalHost = process.env.PL4N_HOST;
+      process.env.PL4N_HOST = "127.0.0.1";
 
       try {
         const { runCliCommand } = await import("../src/cli");
-        await runCliCommand(["node", "thunk", "--thunk-dir", thunkDir, "server", "start"], deps);
-        await runCliCommand(["node", "thunk", "--thunk-dir", thunkDir, "server", "stop"], deps);
+        await runCliCommand(["node", "pl4n", "--pl4n-dir", pl4nDir, "server", "start"], deps);
+        await runCliCommand(["node", "pl4n", "--pl4n-dir", pl4nDir, "server", "stop"], deps);
       } finally {
         console.log = originalLog;
         if (originalHost === undefined) {
-          delete process.env.THUNK_HOST;
+          delete process.env.PL4N_HOST;
         } else {
-          process.env.THUNK_HOST = originalHost;
+          process.env.PL4N_HOST = originalHost;
         }
       }
 
@@ -570,9 +564,9 @@ process.exit(1);
     });
   });
 
-  it("server start respects THUNK_PORT override", async () => {
+  it("server start respects PL4N_PORT override", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
       let receivedOptions: Record<string, unknown> | undefined;
 
       const deps: Partial<CliDeps> = {
@@ -590,25 +584,25 @@ process.exit(1);
         logs.push(String(message ?? ""));
       };
 
-      const originalHost = process.env.THUNK_HOST;
-      process.env.THUNK_HOST = "127.0.0.1";
-      const originalPort = process.env.THUNK_PORT;
-      process.env.THUNK_PORT = "7788";
+      const originalHost = process.env.PL4N_HOST;
+      process.env.PL4N_HOST = "127.0.0.1";
+      const originalPort = process.env.PL4N_PORT;
+      process.env.PL4N_PORT = "7788";
 
       try {
         const { runCliCommand } = await import("../src/cli");
-        await runCliCommand(["node", "thunk", "--thunk-dir", thunkDir, "server", "start"], deps);
+        await runCliCommand(["node", "pl4n", "--pl4n-dir", pl4nDir, "server", "start"], deps);
       } finally {
         console.log = originalLog;
         if (originalHost === undefined) {
-          delete process.env.THUNK_HOST;
+          delete process.env.PL4N_HOST;
         } else {
-          process.env.THUNK_HOST = originalHost;
+          process.env.PL4N_HOST = originalHost;
         }
         if (originalPort === undefined) {
-          delete process.env.THUNK_PORT;
+          delete process.env.PL4N_PORT;
         } else {
-          process.env.THUNK_PORT = originalPort;
+          process.env.PL4N_PORT = originalPort;
         }
       }
 
@@ -621,7 +615,7 @@ process.exit(1);
   it("wait reports agent errors when drafting fails", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
       const binDir = path.join(root, "bin");
       await fs.mkdir(binDir, { recursive: true });
 
@@ -642,10 +636,10 @@ process.exit(1);
       );
 
       await withPatchedPath(binDir, async () => {
-        const init = runCli(["--thunk-dir", thunkDir, "init", "Test feature"], repoRoot);
+        const init = runCli(["--pl4n-dir", pl4nDir, "init", "Test feature"], repoRoot);
         const sessionId = JSON.parse(init.stdout).session_id as string;
 
-        const result = runCli(["--thunk-dir", thunkDir, "wait", "--session", sessionId], repoRoot);
+        const result = runCli(["--pl4n-dir", pl4nDir, "wait", "--session", sessionId], repoRoot);
         expect(result.exitCode).toBe(1);
         const data = JSON.parse(result.stdout);
         expect(data.error).toBe("Turn failed");
@@ -660,10 +654,10 @@ process.exit(1);
   it("wait uses session config snapshot", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
       const binDir = path.join(root, "bin");
       await fs.mkdir(binDir, { recursive: true });
-      await fs.mkdir(thunkDir, { recursive: true });
+      await fs.mkdir(pl4nDir, { recursive: true });
 
       const initialConfig = [
         "agents:",
@@ -676,7 +670,7 @@ process.exit(1);
         "  model: opus",
         "",
       ].join("\n");
-      await fs.writeFile(path.join(thunkDir, "thunk.yaml"), initialConfig, "utf8");
+      await fs.writeFile(path.join(pl4nDir, "pl4n.yaml"), initialConfig, "utf8");
 
       await writeExecutable(
         path.join(binDir, "claude"),
@@ -700,7 +694,7 @@ for (const line of lines) {
       );
 
       await withPatchedPath(binDir, async () => {
-        const init = runCli(["--thunk-dir", thunkDir, "init", "Test feature"], repoRoot);
+        const init = runCli(["--pl4n-dir", pl4nDir, "init", "Test feature"], repoRoot);
         const sessionId = JSON.parse(init.stdout).session_id as string;
 
         const updatedConfig = [
@@ -714,15 +708,15 @@ for (const line of lines) {
           "  model: opus",
           "",
         ].join("\n");
-        await fs.writeFile(path.join(thunkDir, "thunk.yaml"), updatedConfig, "utf8");
+        await fs.writeFile(path.join(pl4nDir, "pl4n.yaml"), updatedConfig, "utf8");
 
         const waitResult = runCli(
-          ["--thunk-dir", thunkDir, "wait", "--session", sessionId],
+          ["--pl4n-dir", pl4nDir, "wait", "--session", sessionId],
           repoRoot,
         );
         expect(waitResult.exitCode).toBe(0);
 
-        const manager = new SessionManager(thunkDir);
+        const manager = new SessionManager(pl4nDir);
         const state = await manager.loadSession(sessionId);
         expect(state?.agentPlanIds).toEqual({ solo: expect.any(String) });
       });
@@ -732,8 +726,8 @@ for (const line of lines) {
   it("approve creates a plan symlink", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n-test");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Test feature");
       state.phase = Phase.UserReview;
       await manager.saveState(state);
@@ -743,7 +737,7 @@ for (const line of lines) {
       await fs.writeFile(paths.turnFile(state.turn), "## Summary\nAll good\n", "utf8");
 
       const result = runCli(
-        ["--thunk-dir", thunkDir, "approve", "--session", state.sessionId],
+        ["--pl4n-dir", pl4nDir, "approve", "--session", state.sessionId],
         repoRoot,
       );
 
@@ -761,8 +755,8 @@ for (const line of lines) {
   it("approve errors with unanswered questions", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n-test");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Question test");
       state.phase = Phase.UserReview;
       await manager.saveState(state);
@@ -776,7 +770,7 @@ for (const line of lines) {
       );
 
       const result = runCli(
-        ["--thunk-dir", thunkDir, "approve", "--session", state.sessionId],
+        ["--pl4n-dir", pl4nDir, "approve", "--session", state.sessionId],
         repoRoot,
       );
 
@@ -789,12 +783,12 @@ for (const line of lines) {
   it("diff errors when turn < 2", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
-      const init = runCli(["--thunk-dir", thunkDir, "init", "Test feature"], repoRoot);
+      const init = runCli(["--pl4n-dir", pl4nDir, "init", "Test feature"], repoRoot);
       const sessionId = JSON.parse(init.stdout).session_id as string;
 
-      const result = runCli(["--thunk-dir", thunkDir, "diff", "--session", sessionId], repoRoot);
+      const result = runCli(["--pl4n-dir", pl4nDir, "diff", "--session", sessionId], repoRoot);
       const data = JSON.parse(result.stdout);
       expect(result.exitCode).toBe(1);
       expect(data.error).toContain("Need at least 2 turns");
@@ -804,14 +798,14 @@ for (const line of lines) {
   it("diff errors when files are missing", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n-test");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Test feature");
       state.turn = 2;
       await manager.saveState(state);
 
       const result = runCli(
-        ["--thunk-dir", thunkDir, "diff", "--session", state.sessionId],
+        ["--pl4n-dir", pl4nDir, "diff", "--session", state.sessionId],
         repoRoot,
       );
       const data = JSON.parse(result.stdout);
@@ -823,7 +817,7 @@ for (const line of lines) {
   it("init reads task from --file", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
       const taskFile = path.join(root, "task.md");
 
       const longTask = `# Feature Request
@@ -843,13 +837,13 @@ A: Yes, use --file - for stdin
 
       await fs.writeFile(taskFile, longTask, "utf8");
 
-      const result = runCli(["--thunk-dir", thunkDir, "init", "--file", taskFile], repoRoot);
+      const result = runCli(["--pl4n-dir", pl4nDir, "init", "--file", taskFile], repoRoot);
 
       expect(result.exitCode).toBe(0);
       const data = JSON.parse(result.stdout);
       expect(data.session_id).toBeDefined();
 
-      const manager = new SessionManager(thunkDir);
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.loadSession(data.session_id);
       expect(state?.task).toContain("Feature Request");
       expect(state?.task).toContain("Q&A");
@@ -859,9 +853,9 @@ A: Yes, use --file - for stdin
   it("init errors when no task and no --file", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
-      const result = runCli(["--thunk-dir", thunkDir, "init"], repoRoot);
+      const result = runCli(["--pl4n-dir", pl4nDir, "init"], repoRoot);
 
       expect(result.exitCode).toBe(1);
       const data = JSON.parse(result.stdout);
@@ -872,10 +866,10 @@ A: Yes, use --file - for stdin
   it("init errors when --file does not exist", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
       const result = runCli(
-        ["--thunk-dir", thunkDir, "init", "--file", "/nonexistent/task.md"],
+        ["--pl4n-dir", pl4nDir, "init", "--file", "/nonexistent/task.md"],
         repoRoot,
       );
 

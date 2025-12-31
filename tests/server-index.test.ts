@@ -6,10 +6,10 @@ import { describe, expect, it } from "bun:test";
 import { Phase } from "../src/models";
 import { SessionManager } from "../src/session";
 import { ensureGlobalToken } from "../src/server/auth";
-import { parsePortArg, resolveThunkDir, startServer } from "../src/server/index";
+import { parsePortArg, resolvePl4nDir, startServer } from "../src/server/index";
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "thunk-server-index-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "pl4n-server-index-"));
   try {
     return await fn(root);
   } finally {
@@ -20,8 +20,8 @@ async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
 describe("server index", () => {
   it("routes requests and shuts down on idle", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Server routing");
       state.phase = Phase.Approved;
       await manager.saveState(state);
@@ -31,7 +31,7 @@ describe("server index", () => {
       await fs.writeFile(paths.turnFile(state.turn), "Plan content\n", "utf8");
 
       const sessionToken = state.sessionToken ?? "";
-      const globalToken = await ensureGlobalToken(thunkDir);
+      const globalToken = await ensureGlobalToken(pl4nDir);
       const base = "http://localhost";
 
       const originalServe = Bun.serve;
@@ -64,7 +64,7 @@ describe("server index", () => {
       process.on = (() => process) as typeof process.on;
 
       try {
-        const serverPromise = startServer({ thunkDir, port: 4567 });
+        const serverPromise = startServer({ pl4nDir, port: 4567 });
 
         await serveReady;
         if (!fetchHandler) {
@@ -154,7 +154,7 @@ describe("server index", () => {
         const missing = await handler(new Request(`${base}/missing`));
         expect(missing.status).toBe(404);
 
-        const infoPath = path.join(thunkDir, "server.json");
+        const infoPath = path.join(pl4nDir, "server.json");
         const infoRaw = await fs.readFile(infoPath, "utf8");
         const info = JSON.parse(infoRaw) as Record<string, unknown>;
         info.last_activity = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
@@ -179,51 +179,51 @@ describe("server index", () => {
   });
 
   it("parses port args and environment", () => {
-    const originalPort = process.env.THUNK_PORT;
-    process.env.THUNK_PORT = "5123";
+    const originalPort = process.env.PL4N_PORT;
+    process.env.PL4N_PORT = "5123";
 
     try {
       expect(parsePortArg(["node", "server", "--port", "4040"])).toBe(4040);
       expect(parsePortArg(["node", "server"])).toBe(5123);
-      process.env.THUNK_PORT = "bad";
+      process.env.PL4N_PORT = "bad";
       expect(parsePortArg(["node", "server"])).toBeNull();
     } finally {
       if (originalPort === undefined) {
-        delete process.env.THUNK_PORT;
+        delete process.env.PL4N_PORT;
       } else {
-        process.env.THUNK_PORT = originalPort;
+        process.env.PL4N_PORT = originalPort;
       }
     }
   });
 
-  it("resolves thunk dir from env and parent paths", async () => {
+  it("resolves pl4n dir from env and parent paths", async () => {
     await withTempDir(async (root) => {
-      const originalDir = process.env.THUNK_DIR;
+      const originalDir = process.env.PL4N_DIR;
       const originalCwd = process.cwd();
-      const envDir = path.join(root, ".thunk-env");
+      const envDir = path.join(root, ".pl4n-env");
       const nested = path.join(root, "nested", "child");
       await fs.mkdir(envDir, { recursive: true });
       await fs.mkdir(nested, { recursive: true });
 
       try {
-        process.env.THUNK_DIR = envDir;
-        expect(await resolveThunkDir()).toBe(envDir);
+        process.env.PL4N_DIR = envDir;
+        expect(await resolvePl4nDir()).toBe(envDir);
 
-        delete process.env.THUNK_DIR;
-        const parentThunk = path.join(root, ".thunk");
-        await fs.mkdir(parentThunk, { recursive: true });
+        delete process.env.PL4N_DIR;
+        const parentPl4n = path.join(root, ".pl4n");
+        await fs.mkdir(parentPl4n, { recursive: true });
         process.chdir(nested);
-        expect(await resolveThunkDir()).toBe(await fs.realpath(parentThunk));
+        expect(await resolvePl4nDir()).toBe(await fs.realpath(parentPl4n));
 
-        await fs.rm(parentThunk, { recursive: true, force: true });
+        await fs.rm(parentPl4n, { recursive: true, force: true });
         const nestedReal = await fs.realpath(nested);
-        expect(await resolveThunkDir()).toBe(path.join(nestedReal, ".thunk"));
+        expect(await resolvePl4nDir()).toBe(path.join(nestedReal, ".pl4n"));
       } finally {
         process.chdir(originalCwd);
         if (originalDir === undefined) {
-          delete process.env.THUNK_DIR;
+          delete process.env.PL4N_DIR;
         } else {
-          process.env.THUNK_DIR = originalDir;
+          process.env.PL4N_DIR = originalDir;
         }
       }
     });

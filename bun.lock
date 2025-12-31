@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "thunk",
+      "name": "pl4n",
       "dependencies": {
         "clipboardy": "^4.0.0",
         "diff": "^5.2.0",

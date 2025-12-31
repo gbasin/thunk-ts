@@ -8,7 +8,7 @@ Approve planning session: **$ARGUMENTS**
 
 ## Prerequisites
 
-If `thunk` is not found (exit code 127), install it first:
+If `pl4n` is not found (exit code 127), install it first:
 ```bash
 bun install
 ```
@@ -16,7 +16,7 @@ Then continue with the steps below.
 
 ## Steps
 
-1. Run `thunk approve --session $ARGUMENTS`
+1. Run `pl4n approve --session $ARGUMENTS`
 2. If approval succeeds, tell the user:
    - The plan is final
    - The path to `PLAN.md`

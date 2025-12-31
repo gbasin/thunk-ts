@@ -6,7 +6,7 @@ import { createHandlers } from "./handlers";
 import { findAvailablePort } from "./network";
 
 type ServerStart = {
-  thunkDir: string;
+  pl4nDir: string;
   port: number;
 };
 
@@ -20,7 +20,7 @@ export function parsePortArg(argv: string[]): number | null {
       return parsed;
     }
   }
-  const envPort = process.env.THUNK_PORT;
+  const envPort = process.env.PL4N_PORT;
   if (envPort) {
     const parsed = Number(envPort);
     if (!Number.isNaN(parsed)) {
@@ -30,15 +30,15 @@ export function parsePortArg(argv: string[]): number | null {
   return null;
 }
 
-export async function resolveThunkDir(): Promise<string> {
-  const envDir = process.env.THUNK_DIR;
+export async function resolvePl4nDir(): Promise<string> {
+  const envDir = process.env.PL4N_DIR;
   if (envDir) {
     return envDir;
   }
 
   let current = process.cwd();
   while (true) {
-    const candidate = path.join(current, ".thunk");
+    const candidate = path.join(current, ".pl4n");
     try {
       const stat = await fs.stat(candidate);
       if (stat.isDirectory()) {
@@ -55,11 +55,11 @@ export async function resolveThunkDir(): Promise<string> {
     current = parent;
   }
 
-  return path.join(process.cwd(), ".thunk");
+  return path.join(process.cwd(), ".pl4n");
 }
 
-async function ensureServerInfo(thunkDir: string, port: number): Promise<void> {
-  const infoPath = path.join(thunkDir, "server.json");
+async function ensureServerInfo(pl4nDir: string, port: number): Promise<void> {
+  const infoPath = path.join(pl4nDir, "server.json");
   const now = new Date().toISOString();
   const info = {
     pid: process.pid,
@@ -67,18 +67,18 @@ async function ensureServerInfo(thunkDir: string, port: number): Promise<void> {
     started_at: now,
     last_activity: now,
   };
-  await fs.mkdir(thunkDir, { recursive: true });
+  await fs.mkdir(pl4nDir, { recursive: true });
   await fs.writeFile(infoPath, `${JSON.stringify(info)}\n`, "utf8");
 }
 
 export async function startServer(opts?: Partial<ServerStart>): Promise<void> {
-  const thunkDir = opts?.thunkDir ?? (await resolveThunkDir());
+  const pl4nDir = opts?.pl4nDir ?? (await resolvePl4nDir());
   const port = opts?.port ?? (await findAvailablePort(3456));
 
-  await ensureServerInfo(thunkDir, port);
+  await ensureServerInfo(pl4nDir, port);
 
-  const manager = new SessionManager(thunkDir);
-  const handlers = createHandlers({ thunkDir, manager });
+  const manager = new SessionManager(pl4nDir);
+  const handlers = createHandlers({ pl4nDir, manager });
 
   const server = Bun.serve({
     port,
@@ -172,7 +172,7 @@ export async function startServer(opts?: Partial<ServerStart>): Promise<void> {
 
   const shutdown = async () => {
     await server.stop(true);
-    await fs.rm(path.join(thunkDir, "server.json"), { force: true });
+    await fs.rm(path.join(pl4nDir, "server.json"), { force: true });
     resolveStop?.();
   };
 
@@ -196,8 +196,8 @@ export async function startServer(opts?: Partial<ServerStart>): Promise<void> {
 
 async function main(): Promise<void> {
   const port = parsePortArg(process.argv) ?? (await findAvailablePort(3456));
-  const thunkDir = await resolveThunkDir();
-  await startServer({ thunkDir, port });
+  const pl4nDir = await resolvePl4nDir();
+  await startServer({ pl4nDir, port });
 }
 
 if (import.meta.main) {

@@ -18,7 +18,7 @@ type SpawnOptions = {
 type SpawnLike = (options: SpawnOptions) => { pid: number };
 
 type HandlerContext = {
-  thunkDir: string;
+  pl4nDir: string;
   manager: SessionManager;
   spawn?: SpawnLike;
   now?: () => Date;
@@ -185,17 +185,17 @@ function shellEscape(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
-async function spawnContinue(sessionId: string, thunkDir: string, spawn: SpawnLike): Promise<void> {
+async function spawnContinue(sessionId: string, pl4nDir: string, spawn: SpawnLike): Promise<void> {
   const entrypoint = resolveCliEntrypoint();
   const bun = shellEscape(process.execPath);
   const entry = shellEscape(entrypoint);
   const sessionArg = shellEscape(sessionId);
-  const thunkArg = shellEscape(thunkDir);
+  const pl4nArg = shellEscape(pl4nDir);
   const cmd = [
     "sh",
     "-c",
-    `${bun} ${entry} continue --session ${sessionArg} --thunk-dir ${thunkArg} && ` +
-      `${bun} ${entry} wait --session ${sessionArg} --thunk-dir ${thunkArg}`,
+    `${bun} ${entry} continue --session ${sessionArg} --pl4n-dir ${pl4nArg} && ` +
+      `${bun} ${entry} wait --session ${sessionArg} --pl4n-dir ${pl4nArg}`,
   ];
   spawn({
     cmd,
@@ -241,7 +241,7 @@ export function createHandlers(context: HandlerContext) {
 
     async handleList(req: Request): Promise<Response> {
       const token = parseToken(req);
-      if (!(await validateGlobalToken(token, context.thunkDir))) {
+      if (!(await validateGlobalToken(token, context.pl4nDir))) {
         return jsonResponse(401, { error: "invalid token" });
       }
 
@@ -339,7 +339,7 @@ export function createHandlers(context: HandlerContext) {
         return jsonResponse(409, { error: "stale content", mtime: result.mtime });
       }
 
-      await updateServerActivity(context.thunkDir, now());
+      await updateServerActivity(context.pl4nDir, now());
 
       return jsonResponse(200, { mtime: result.mtime });
     },
@@ -364,7 +364,7 @@ export function createHandlers(context: HandlerContext) {
 
       if (req.method === "DELETE") {
         await fs.rm(draftFile, { force: true });
-        await updateServerActivity(context.thunkDir, now());
+        await updateServerActivity(context.pl4nDir, now());
         return jsonResponse(200, { discarded: true });
       }
 
@@ -375,7 +375,7 @@ export function createHandlers(context: HandlerContext) {
 
       await fs.mkdir(path.dirname(turnFile), { recursive: true });
       await fs.writeFile(draftFile, payload.content, "utf8");
-      await updateServerActivity(context.thunkDir, now());
+      await updateServerActivity(context.pl4nDir, now());
 
       return jsonResponse(200, { saved: true });
     },
@@ -407,8 +407,8 @@ export function createHandlers(context: HandlerContext) {
         return jsonResponse(409, { error: "stale content", mtime: result.mtime });
       }
 
-      await updateServerActivity(context.thunkDir, now());
-      await spawnContinue(sessionId, context.thunkDir, spawn);
+      await updateServerActivity(context.pl4nDir, now());
+      await spawnContinue(sessionId, context.pl4nDir, spawn);
 
       return jsonResponse(202, { accepted: true });
     },
@@ -521,7 +521,7 @@ export function createHandlers(context: HandlerContext) {
     },
 
     async handleIdleCheck(): Promise<boolean> {
-      const infoPath = path.join(context.thunkDir, "server.json");
+      const infoPath = path.join(context.pl4nDir, "server.json");
       try {
         const raw = await fs.readFile(infoPath, "utf8");
         const info = JSON.parse(raw) as { last_activity?: string };

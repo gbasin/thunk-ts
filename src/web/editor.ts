@@ -28,7 +28,7 @@ function formatPhase(phase: string): string {
   return phase.replace(/_/g, " ");
 }
 
-class ThunkEditor extends LitElement {
+class Pl4nEditor extends LitElement {
   static properties = {
     session: { type: String, attribute: "data-session" },
     token: { type: String, attribute: "data-token" },
@@ -795,4 +795,4 @@ class ThunkEditor extends LitElement {
   }
 }
 
-customElements.define("thunk-editor", ThunkEditor);
+customElements.define("pl4n-editor", Pl4nEditor);

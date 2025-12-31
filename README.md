@@ -1,8 +1,8 @@
-# Thunk (Bun + TypeScript)
+# Pl4n (Bun + TypeScript)
 
 Multi-agent ensemble planning CLI. Orchestrates multiple AI agents (Claude Code, OpenAI Codex) to collaboratively create implementation plans with human-in-the-loop review.
 
-## Why Thunk?
+## Why Pl4n?
 
 "A droid is only as good as its plan." Planning with multiple models produces more robust plans through:
 
@@ -29,7 +29,7 @@ bun run src/index.ts init "Add user authentication"
 bun run src/index.ts wait --session <session_id>
 
 # Review and edit the plan
-# Edit .thunk/sessions/<id>/turns/001.md
+# Edit .pl4n/sessions/<id>/turns/001.md
 
 # Continue to next turn (incorporates your edits)
 bun run src/index.ts continue --session <session_id>
@@ -40,7 +40,7 @@ bun run src/index.ts approve --session <session_id>
 
 ## Web Editor
 
-Thunk can launch a lightweight web editor for reviewing and editing plans. When `thunk wait`
+Pl4n can launch a lightweight web editor for reviewing and editing plans. When `pl4n wait`
 returns `user_review`, it will start a local server (if needed) and include an `edit_url` in
 the JSON output.
 
@@ -49,22 +49,22 @@ the JSON output.
 bun run src/index.ts wait --session <session_id>
 
 # Disable web editor
-THUNK_WEB=0 bun run src/index.ts wait --session <session_id>
+PL4N_WEB=0 bun run src/index.ts wait --session <session_id>
 ```
 
 Manual server control:
 
 ```bash
-thunk server start        # start daemon
-thunk server stop         # stop daemon
-thunk server status       # check running status
-thunk server start --foreground  # run in foreground (dev)
+pl4n server start        # start daemon
+pl4n server stop         # stop daemon
+pl4n server status       # check running status
+pl4n server start --foreground  # run in foreground (dev)
 ```
 
 For remote access (Tailscale/VPN), override the host used in URLs:
 
 ```bash
-THUNK_HOST=100.x.x.x bun run src/index.ts wait --session <session_id>
+PL4N_HOST=100.x.x.x bun run src/index.ts wait --session <session_id>
 ```
 
 Troubleshooting:
@@ -111,21 +111,21 @@ When you edit `turns/001.md` and call `continue`, agents receive your changes as
 
 | Command | Description |
 |---------|-------------|
-| `thunk init "task"` | Start new planning session |
-| `thunk wait --session <id>` | Block until current turn completes |
-| `thunk status --session <id>` | Check progress without blocking |
-| `thunk continue --session <id>` | Start next turn after your edits |
-| `thunk approve --session <id>` | Lock plan as final |
-| `thunk list` | List all sessions |
-| `thunk clean --session <id>` | Remove session data |
-| `thunk diff --session <id>` | Show changes between turns |
-| `thunk server start|stop|status` | Manage web editor server |
+| `pl4n init "task"` | Start new planning session |
+| `pl4n wait --session <id>` | Block until current turn completes |
+| `pl4n status --session <id>` | Check progress without blocking |
+| `pl4n continue --session <id>` | Start next turn after your edits |
+| `pl4n approve --session <id>` | Lock plan as final |
+| `pl4n list` | List all sessions |
+| `pl4n clean --session <id>` | Remove session data |
+| `pl4n diff --session <id>` | Show changes between turns |
+| `pl4n server start|stop|status` | Manage web editor server |
 
 ## File Structure
 
 ```
-.thunk/
-├── thunk.yaml                        # Agent/tool configuration
+.pl4n/
+├── pl4n.yaml                        # Agent/tool configuration
 └── sessions/
     └── swift-river/                  # Human-friendly session ID
         ├── meta.yaml                 # Task description, timestamp
@@ -158,11 +158,11 @@ When you edit `turns/001.md` and call `continue`, agents receive your changes as
 - Agents read/write their persistent plan file (e.g., `sunny-glade.md`)
 - After synthesis, all agent plan files are synced to the canonical state
 - Debug logs span the entire session (appended each turn)
-- `meta.yaml` stores a `config` snapshot from `.thunk/thunk.yaml` at session init
+- `meta.yaml` stores a `config` snapshot from `.pl4n/pl4n.yaml` at session init
 
 ## Configuration
 
-Edit `.thunk/thunk.yaml` (or `.thunk/thunk.yml`) to configure agents:
+Edit `.pl4n/pl4n.yaml` (or `.pl4n/pl4n.yml`) to configure agents:
 
 ```yaml
 claude:
@@ -170,7 +170,7 @@ claude:
     - Read
     - Edit
     - Write
-  # See .thunk/thunk.yaml for the full default list
+  # See .pl4n/pl4n.yaml for the full default list
 codex:
   full_auto: true
   search: true
@@ -200,7 +200,7 @@ Codex constraints live under `codex` (defaults) or `agents[].codex` (overrides),
 For Claude agents, `claude.allowed_tools` maps to `--allowedTools`, and `claude.add_dir` maps to
 `--add-dir`. Claude's allowlist is best-effort; shell commands can still write if they redirect
 output. Override defaults per agent with `agents[].claude` or `agents[].codex`.
-If you pass `--thunk-dir`, the config is loaded from that directory.
+If you pass `--pl4n-dir`, the config is loaded from that directory.
 
 ## Architecture
 

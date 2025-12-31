@@ -1,6 +1,6 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "thunk",
+  "name": "pl4n",
   "owner": {
     "name": "Gary Basin"
   },
@@ -10,14 +10,14 @@
   },
   "plugins": [
     {
-      "name": "thunk",
+      "name": "pl4n",
       "source": "./plugin",
       "description": "Orchestrate Claude Code and Codex to collaboratively create implementation plans with human-in-the-loop review",
       "version": "0.2.0",
       "author": {
         "name": "Gary Basin"
       },
-      "repository": "https://github.com/gbasin/thunk-ts",
+      "repository": "https://github.com/gbasin/pl4n",
       "license": "MIT",
       "keywords": [
         "planning",

@@ -5,7 +5,7 @@ const IP_CANDIDATES = ["en0", "eth0", "en1", "wlan0", "Wi-Fi"];
 const SKIP_PREFIXES = ["docker", "br-", "veth", "lo", "vmnet", "utun"];
 
 export function getLocalIP(): string {
-  const override = process.env.THUNK_HOST?.trim();
+  const override = process.env.PL4N_HOST?.trim();
   if (override) {
     return override;
   }

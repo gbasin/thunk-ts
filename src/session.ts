@@ -2,20 +2,20 @@ import { promises as fs } from "fs";
 import path from "path";
 import { dump, load } from "js-yaml";
 
-import { AgentStatus, Phase, SessionPaths, SessionState, ThunkConfig } from "./models";
+import { AgentStatus, Phase, SessionPaths, SessionState, Pl4nConfig } from "./models";
 import { generateName } from "./names";
 import { generateToken } from "./server/auth";
 
 export class SessionManager {
-  thunkDir: string;
+  pl4nDir: string;
   sessionsDir: string;
 
-  constructor(thunkDir?: string) {
-    this.thunkDir = thunkDir ?? ".thunk";
-    this.sessionsDir = path.join(this.thunkDir, "sessions");
+  constructor(pl4nDir?: string) {
+    this.pl4nDir = pl4nDir ?? ".pl4n";
+    this.sessionsDir = path.join(this.pl4nDir, "sessions");
   }
 
-  async createSession(task: string, config?: ThunkConfig): Promise<SessionState> {
+  async createSession(task: string, config?: Pl4nConfig): Promise<SessionState> {
     const sessionId = await this.generateUniqueSessionId();
     const now = new Date();
 
@@ -49,7 +49,7 @@ export class SessionManager {
     return state;
   }
 
-  async loadConfigSnapshot(sessionId: string): Promise<ThunkConfig | null> {
+  async loadConfigSnapshot(sessionId: string): Promise<Pl4nConfig | null> {
     const paths = this.getPaths(sessionId);
     let metaContent: string;
     try {
@@ -75,7 +75,7 @@ export class SessionManager {
       return null;
     }
 
-    return ThunkConfig.fromConfigData(config, `${paths.meta} config`);
+    return Pl4nConfig.fromConfigData(config, `${paths.meta} config`);
   }
 
   async loadSession(sessionId: string): Promise<SessionState | null> {

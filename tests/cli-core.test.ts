@@ -4,11 +4,11 @@ import path from "path";
 import { Readable } from "stream";
 import { describe, expect, it } from "bun:test";
 
-import { Phase, ThunkConfig } from "../src/models";
+import { Phase, Pl4nConfig } from "../src/models";
 import { SessionManager } from "../src/session";
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "thunk-cli-core-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "pl4n-cli-core-"));
   try {
     return await fn(root);
   } finally {
@@ -85,13 +85,13 @@ async function runCliCommandExpectExit(
 describe("CLI (runCliCommand)", () => {
   it("init creates a session", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
       const logs = await runCliCommandCapture([
         "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
+        "pl4n",
+        "--pl4n-dir",
+        pl4nDir,
         "init",
         "CLI init",
       ]);
@@ -101,7 +101,7 @@ describe("CLI (runCliCommand)", () => {
       expect(data.turn).toBe(1);
       expect(data.phase).toBe(Phase.Drafting);
 
-      const manager = new SessionManager(thunkDir);
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.loadSession(data.session_id);
       expect(state?.task).toBe("CLI init");
     });
@@ -109,7 +109,7 @@ describe("CLI (runCliCommand)", () => {
 
   it("init reads task from stdin with --file -", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
       const originalStdin = process.stdin;
       (process as { stdin: NodeJS.ReadableStream }).stdin = Readable.from([
         Buffer.from("Task from stdin\n"),
@@ -118,16 +118,16 @@ describe("CLI (runCliCommand)", () => {
       try {
         const logs = await runCliCommandCapture([
           "node",
-          "thunk",
-          "--thunk-dir",
-          thunkDir,
+          "pl4n",
+          "--pl4n-dir",
+          pl4nDir,
           "init",
           "--file",
           "-",
         ]);
 
         const data = JSON.parse(logs[0]) as { session_id: string };
-        const manager = new SessionManager(thunkDir);
+        const manager = new SessionManager(pl4nDir);
         const state = await manager.loadSession(data.session_id);
         expect(state?.task).toBe("Task from stdin");
       } finally {
@@ -138,14 +138,14 @@ describe("CLI (runCliCommand)", () => {
 
   it("init errors when task file is missing", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
       const missing = path.join(root, "missing.md");
 
       const result = await runCliCommandExpectExit([
         "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
+        "pl4n",
+        "--pl4n-dir",
+        pl4nDir,
         "init",
         "--file",
         missing,
@@ -159,15 +159,9 @@ describe("CLI (runCliCommand)", () => {
 
   it("init errors when missing task and --file", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
-      const result = await runCliCommandExpectExit([
-        "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
-        "init",
-      ]);
+      const result = await runCliCommandExpectExit(["node", "pl4n", "--pl4n-dir", pl4nDir, "init"]);
 
       expect(result.exitCode).toBe(1);
       const data = JSON.parse(result.output) as { error: string };
@@ -177,15 +171,15 @@ describe("CLI (runCliCommand)", () => {
 
   it("init errors when config is invalid", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
-      await fs.mkdir(thunkDir, { recursive: true });
-      await fs.writeFile(path.join(thunkDir, "thunk.yaml"), "agents: [", "utf8");
+      const pl4nDir = path.join(root, ".pl4n-test");
+      await fs.mkdir(pl4nDir, { recursive: true });
+      await fs.writeFile(path.join(pl4nDir, "pl4n.yaml"), "agents: [", "utf8");
 
       const result = await runCliCommandExpectExit([
         "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
+        "pl4n",
+        "--pl4n-dir",
+        pl4nDir,
         "init",
         "Bad config",
       ]);
@@ -198,15 +192,15 @@ describe("CLI (runCliCommand)", () => {
 
   it("list honors global options and pretty output", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n-test");
+      const manager = new SessionManager(pl4nDir);
       await manager.createSession("Task one");
       await manager.createSession("Task two");
 
       const logs = await runCliCommandCapture([
         "node",
-        "thunk",
-        `--thunk-dir=${thunkDir}`,
+        "pl4n",
+        `--pl4n-dir=${pl4nDir}`,
         "--pretty",
         "list",
       ]);
@@ -219,15 +213,15 @@ describe("CLI (runCliCommand)", () => {
 
   it("status reports missing turn file as null", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n-test");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Status check");
 
       const logs = await runCliCommandCapture([
         "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
+        "pl4n",
+        "--pl4n-dir",
+        pl4nDir,
         "status",
         "--session",
         state.sessionId,
@@ -241,8 +235,8 @@ describe("CLI (runCliCommand)", () => {
 
   it("status includes agent errors and file path", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n-test");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Status errors");
       state.agentErrors = { codex: "failed" };
       await manager.saveState(state);
@@ -251,15 +245,15 @@ describe("CLI (runCliCommand)", () => {
       await fs.mkdir(path.dirname(paths.turnFile(state.turn)), { recursive: true });
       await fs.writeFile(paths.turnFile(state.turn), "## Summary\nOk\n", "utf8");
 
-      const originalWeb = process.env.THUNK_WEB;
-      process.env.THUNK_WEB = "false";
+      const originalWeb = process.env.PL4N_WEB;
+      process.env.PL4N_WEB = "false";
 
       try {
         const logs = await runCliCommandCapture([
           "node",
-          "thunk",
-          "--thunk-dir",
-          thunkDir,
+          "pl4n",
+          "--pl4n-dir",
+          pl4nDir,
           "status",
           "--session",
           state.sessionId,
@@ -270,9 +264,9 @@ describe("CLI (runCliCommand)", () => {
         expect(data.file).toBe(paths.turnFile(state.turn));
       } finally {
         if (originalWeb === undefined) {
-          delete process.env.THUNK_WEB;
+          delete process.env.PL4N_WEB;
         } else {
-          process.env.THUNK_WEB = originalWeb;
+          process.env.PL4N_WEB = originalWeb;
         }
       }
     });
@@ -280,13 +274,13 @@ describe("CLI (runCliCommand)", () => {
 
   it("status errors when session does not exist", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
       const result = await runCliCommandExpectExit([
         "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
+        "pl4n",
+        "--pl4n-dir",
+        pl4nDir,
         "status",
         "--session",
         "missing-session",
@@ -300,15 +294,9 @@ describe("CLI (runCliCommand)", () => {
 
   it("wait errors when --session is missing", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
-      const result = await runCliCommandExpectExit([
-        "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
-        "wait",
-      ]);
+      const result = await runCliCommandExpectExit(["node", "pl4n", "--pl4n-dir", pl4nDir, "wait"]);
 
       expect(result.exitCode).toBe(1);
       const data = JSON.parse(result.output) as { error: string };
@@ -318,13 +306,13 @@ describe("CLI (runCliCommand)", () => {
 
   it("wait errors when session does not exist", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
       const result = await runCliCommandExpectExit([
         "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
+        "pl4n",
+        "--pl4n-dir",
+        pl4nDir,
         "wait",
         "--session",
         "missing-session",
@@ -338,8 +326,8 @@ describe("CLI (runCliCommand)", () => {
 
   it("approve creates a plan symlink", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n-test");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Approve test");
       state.phase = Phase.UserReview;
       await manager.saveState(state);
@@ -351,9 +339,9 @@ describe("CLI (runCliCommand)", () => {
 
       const logs = await runCliCommandCapture([
         "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
+        "pl4n",
+        "--pl4n-dir",
+        pl4nDir,
         "approve",
         "--session",
         state.sessionId,
@@ -370,15 +358,15 @@ describe("CLI (runCliCommand)", () => {
 
   it("clean removes a session", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n-test");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Clean test");
 
       const logs = await runCliCommandCapture([
         "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
+        "pl4n",
+        "--pl4n-dir",
+        pl4nDir,
         "clean",
         "--session",
         state.sessionId,
@@ -392,9 +380,9 @@ describe("CLI (runCliCommand)", () => {
 
   it("diff returns unified diff when files exist", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
-      const manager = new SessionManager(thunkDir);
-      const state = await manager.createSession("Diff test", ThunkConfig.default());
+      const pl4nDir = path.join(root, ".pl4n-test");
+      const manager = new SessionManager(pl4nDir);
+      const state = await manager.createSession("Diff test", Pl4nConfig.default());
       state.turn = 2;
       state.phase = Phase.UserReview;
       await manager.saveState(state);
@@ -406,9 +394,9 @@ describe("CLI (runCliCommand)", () => {
 
       const logs = await runCliCommandCapture([
         "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
+        "pl4n",
+        "--pl4n-dir",
+        pl4nDir,
         "diff",
         "--session",
         state.sessionId,
@@ -424,13 +412,13 @@ describe("CLI (runCliCommand)", () => {
 
   it("diff errors when session does not exist", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
       const result = await runCliCommandExpectExit([
         "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
+        "pl4n",
+        "--pl4n-dir",
+        pl4nDir,
         "diff",
         "--session",
         "missing-session",
@@ -444,15 +432,9 @@ describe("CLI (runCliCommand)", () => {
 
   it("diff errors when --session is missing", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
-      const result = await runCliCommandExpectExit([
-        "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
-        "diff",
-      ]);
+      const result = await runCliCommandExpectExit(["node", "pl4n", "--pl4n-dir", pl4nDir, "diff"]);
 
       expect(result.exitCode).toBe(1);
       const data = JSON.parse(result.output) as { error: string };
@@ -462,15 +444,15 @@ describe("CLI (runCliCommand)", () => {
 
   it("diff errors when turn is less than 2", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n-test");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Diff small");
 
       const result = await runCliCommandExpectExit([
         "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
+        "pl4n",
+        "--pl4n-dir",
+        pl4nDir,
         "diff",
         "--session",
         state.sessionId,
@@ -484,17 +466,17 @@ describe("CLI (runCliCommand)", () => {
 
   it("diff errors when turn files are missing", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n-test");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Diff missing");
       state.turn = 2;
       await manager.saveState(state);
 
       const result = await runCliCommandExpectExit([
         "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
+        "pl4n",
+        "--pl4n-dir",
+        pl4nDir,
         "diff",
         "--session",
         state.sessionId,
@@ -508,8 +490,8 @@ describe("CLI (runCliCommand)", () => {
 
   it("diff errors when session meta is invalid", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n-test");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Diff meta");
       state.turn = 2;
       await manager.saveState(state);
@@ -519,9 +501,9 @@ describe("CLI (runCliCommand)", () => {
 
       const result = await runCliCommandExpectExit([
         "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
+        "pl4n",
+        "--pl4n-dir",
+        pl4nDir,
         "diff",
         "--session",
         state.sessionId,
@@ -535,22 +517,22 @@ describe("CLI (runCliCommand)", () => {
 
   it("wait returns user_review with agent errors", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n-test");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Wait errors");
       state.phase = Phase.UserReview;
       state.agentErrors = { codex: "failed" };
       await manager.saveState(state);
 
-      const originalWeb = process.env.THUNK_WEB;
-      process.env.THUNK_WEB = "false";
+      const originalWeb = process.env.PL4N_WEB;
+      process.env.PL4N_WEB = "false";
 
       try {
         const logs = await runCliCommandCapture([
           "node",
-          "thunk",
-          "--thunk-dir",
-          thunkDir,
+          "pl4n",
+          "--pl4n-dir",
+          pl4nDir,
           "wait",
           "--session",
           state.sessionId,
@@ -560,9 +542,9 @@ describe("CLI (runCliCommand)", () => {
         expect(data.agent_errors).toEqual({ codex: "failed" });
       } finally {
         if (originalWeb === undefined) {
-          delete process.env.THUNK_WEB;
+          delete process.env.PL4N_WEB;
         } else {
-          process.env.THUNK_WEB = originalWeb;
+          process.env.PL4N_WEB = originalWeb;
         }
       }
     });
@@ -570,17 +552,17 @@ describe("CLI (runCliCommand)", () => {
 
   it("wait returns approved details", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n-test");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Wait approved");
       state.phase = Phase.Approved;
       await manager.saveState(state);
 
       const logs = await runCliCommandCapture([
         "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
+        "pl4n",
+        "--pl4n-dir",
+        pl4nDir,
         "wait",
         "--session",
         state.sessionId,
@@ -594,17 +576,17 @@ describe("CLI (runCliCommand)", () => {
 
   it("continue advances a user_review session", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n-test");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Continue test");
       state.phase = Phase.UserReview;
       await manager.saveState(state);
 
       const logs = await runCliCommandCapture([
         "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
+        "pl4n",
+        "--pl4n-dir",
+        pl4nDir,
         "continue",
         "--session",
         state.sessionId,
@@ -622,13 +604,13 @@ describe("CLI (runCliCommand)", () => {
 
   it("continue errors when session does not exist", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
       const result = await runCliCommandExpectExit([
         "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
+        "pl4n",
+        "--pl4n-dir",
+        pl4nDir,
         "continue",
         "--session",
         "missing-session",
@@ -642,13 +624,13 @@ describe("CLI (runCliCommand)", () => {
 
   it("continue errors when --session is missing", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
       const result = await runCliCommandExpectExit([
         "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
+        "pl4n",
+        "--pl4n-dir",
+        pl4nDir,
         "continue",
       ]);
 
@@ -660,8 +642,8 @@ describe("CLI (runCliCommand)", () => {
 
   it("approve errors with unanswered questions", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n-test");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Question test");
       state.phase = Phase.UserReview;
       await manager.saveState(state);
@@ -676,9 +658,9 @@ describe("CLI (runCliCommand)", () => {
 
       const result = await runCliCommandExpectExit([
         "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
+        "pl4n",
+        "--pl4n-dir",
+        pl4nDir,
         "approve",
         "--session",
         state.sessionId,
@@ -692,13 +674,13 @@ describe("CLI (runCliCommand)", () => {
 
   it("approve errors when session does not exist", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
       const result = await runCliCommandExpectExit([
         "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
+        "pl4n",
+        "--pl4n-dir",
+        pl4nDir,
         "approve",
         "--session",
         "missing-session",
@@ -712,13 +694,13 @@ describe("CLI (runCliCommand)", () => {
 
   it("approve errors when --session is missing", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
       const result = await runCliCommandExpectExit([
         "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
+        "pl4n",
+        "--pl4n-dir",
+        pl4nDir,
         "approve",
       ]);
 
@@ -730,13 +712,13 @@ describe("CLI (runCliCommand)", () => {
 
   it("clean errors when session is missing", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
       const result = await runCliCommandExpectExit([
         "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
+        "pl4n",
+        "--pl4n-dir",
+        pl4nDir,
         "clean",
         "--session",
         "missing-session",
@@ -750,13 +732,13 @@ describe("CLI (runCliCommand)", () => {
 
   it("clean errors when --session is missing", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
       const result = await runCliCommandExpectExit([
         "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
+        "pl4n",
+        "--pl4n-dir",
+        pl4nDir,
         "clean",
       ]);
 
@@ -768,11 +750,11 @@ describe("CLI (runCliCommand)", () => {
 
   it("runCli parses commands", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n-test");
+      const manager = new SessionManager(pl4nDir);
       await manager.createSession("List item");
 
-      const logs = await runCliCapture(["node", "thunk", "--thunk-dir", thunkDir, "list"]);
+      const logs = await runCliCapture(["node", "pl4n", "--pl4n-dir", pl4nDir, "list"]);
       const data = JSON.parse(logs[0]) as { sessions: unknown[] };
       expect(data.sessions.length).toBe(1);
     });
@@ -780,13 +762,13 @@ describe("CLI (runCliCommand)", () => {
 
   it("status exits with error when missing --session", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk-test");
+      const pl4nDir = path.join(root, ".pl4n-test");
 
       const result = await runCliCommandExpectExit([
         "node",
-        "thunk",
-        "--thunk-dir",
-        thunkDir,
+        "pl4n",
+        "--pl4n-dir",
+        pl4nDir,
         "status",
       ]);
 

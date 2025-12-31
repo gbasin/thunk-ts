@@ -1,10 +1,10 @@
 {
-  "name": "thunk",
+  "name": "pl4n",
   "version": "0.1.0",
   "description": "Multi-agent ensemble planning CLI (Bun + TypeScript)",
   "type": "module",
   "bin": {
-    "thunk": "src/index.ts"
+    "pl4n": "src/index.ts"
   },
   "scripts": {
     "dev": "bun run src/index.ts",

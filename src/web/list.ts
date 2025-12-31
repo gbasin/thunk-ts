@@ -13,7 +13,7 @@ type ListPayload = {
   sessions: SessionItem[];
 };
 
-type ListWindow = Window & { __THUNK_LIST__?: ListPayload };
+type ListWindow = Window & { __PL4N_LIST__?: ListPayload };
 
 function formatPhase(phase: string): string {
   return phase.replace(/_/g, " ");
@@ -46,13 +46,13 @@ function truncateTask(task: string): string {
   return first.length > 200 ? first.slice(0, 200) + "…" : first;
 }
 
-class ThunkList extends LitElement {
+class Pl4nList extends LitElement {
   createRenderRoot() {
     return this;
   }
 
   private get sessions(): SessionItem[] {
-    const payload = (window as ListWindow).__THUNK_LIST__;
+    const payload = (window as ListWindow).__PL4N_LIST__;
     return payload?.sessions ?? [];
   }
 
@@ -95,4 +95,4 @@ class ThunkList extends LitElement {
   }
 }
 
-customElements.define("thunk-list", ThunkList);
+customElements.define("pl4n-list", Pl4nList);

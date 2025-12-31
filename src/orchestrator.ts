@@ -5,7 +5,7 @@ import { createTwoFilesPatch } from "diff";
 import type { AgentAdapter } from "./adapters/base";
 import { ClaudeCodeSyncAdapter } from "./adapters/claude";
 import { CodexCLISyncAdapter } from "./adapters/codex";
-import { AgentStatus, Phase, ThunkConfig } from "./models";
+import { AgentStatus, Phase, Pl4nConfig } from "./models";
 import { generateUniqueName } from "./names";
 import { getDraftPrompt, getPeerReviewPrompt, getSynthesisPrompt } from "./prompts";
 import { SessionManager } from "./session";
@@ -73,10 +73,10 @@ function unifiedDiff(params: {
 
 export class TurnOrchestrator {
   manager: SessionManager;
-  config: ThunkConfig;
+  config: Pl4nConfig;
   adapters: Record<string, AgentAdapter>;
 
-  constructor(manager: SessionManager, config: ThunkConfig) {
+  constructor(manager: SessionManager, config: Pl4nConfig) {
     this.manager = manager;
     this.config = config;
     this.adapters = {};
@@ -121,7 +121,7 @@ export class TurnOrchestrator {
     await this.manager.saveState(state);
 
     const drafts: Record<string, string> = {};
-    const projectRoot = path.resolve(this.manager.thunkDir, "..");
+    const projectRoot = path.resolve(this.manager.pl4nDir, "..");
 
     // Mark all agents as working upfront
     for (const agentId of Object.keys(this.adapters)) {
@@ -227,7 +227,7 @@ export class TurnOrchestrator {
       const sessionFile = paths.agentSessionFile(planId);
 
       const [success, output] = await adapter.runSync({
-        worktree: path.resolve(this.manager.thunkDir, ".."),
+        worktree: path.resolve(this.manager.pl4nDir, ".."),
         prompt,
         outputFile: planFile,
         logFile: sessionLog,
@@ -349,7 +349,7 @@ export class TurnOrchestrator {
     await fs.mkdir(path.dirname(synthSessionFile), { recursive: true });
 
     const [success, _output] = await adapter.runSync({
-      worktree: path.resolve(this.manager.thunkDir, ".."),
+      worktree: path.resolve(this.manager.pl4nDir, ".."),
       prompt,
       outputFile: synthFile,
       logFile,

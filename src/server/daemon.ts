@@ -43,7 +43,7 @@ async function fileExists(filePath: string): Promise<boolean> {
 }
 
 async function resolveDaemonCommand(
-  thunkDir: string,
+  pl4nDir: string,
   port: number,
   options: StartOptions,
 ): Promise<string[]> {
@@ -65,20 +65,20 @@ async function resolveDaemonCommand(
   return [
     process.execPath,
     cliEntrypoint,
-    "--thunk-dir",
-    thunkDir,
+    "--pl4n-dir",
+    pl4nDir,
     "server",
     "start",
     "--foreground",
   ];
 }
 
-function serverInfoPath(thunkDir: string): string {
-  return path.join(thunkDir, "server.json");
+function serverInfoPath(pl4nDir: string): string {
+  return path.join(pl4nDir, "server.json");
 }
 
-async function readServerInfo(thunkDir: string): Promise<ServerInfo | null> {
-  const infoPath = serverInfoPath(thunkDir);
+async function readServerInfo(pl4nDir: string): Promise<ServerInfo | null> {
+  const infoPath = serverInfoPath(pl4nDir);
   try {
     const raw = await fs.readFile(infoPath, "utf8");
     const parsed = JSON.parse(raw) as ServerInfo;
@@ -91,25 +91,25 @@ async function readServerInfo(thunkDir: string): Promise<ServerInfo | null> {
   }
 }
 
-async function writeServerInfo(thunkDir: string, info: ServerInfo): Promise<void> {
-  await fs.mkdir(thunkDir, { recursive: true });
-  await fs.writeFile(serverInfoPath(thunkDir), `${JSON.stringify(info)}\n`, "utf8");
+async function writeServerInfo(pl4nDir: string, info: ServerInfo): Promise<void> {
+  await fs.mkdir(pl4nDir, { recursive: true });
+  await fs.writeFile(serverInfoPath(pl4nDir), `${JSON.stringify(info)}\n`, "utf8");
 }
 
-export async function updateServerActivity(thunkDir: string, now = new Date()): Promise<void> {
-  const info = await readServerInfo(thunkDir);
+export async function updateServerActivity(pl4nDir: string, now = new Date()): Promise<void> {
+  const info = await readServerInfo(pl4nDir);
   if (!info) {
     return;
   }
   info.last_activity = now.toISOString();
-  await writeServerInfo(thunkDir, info);
+  await writeServerInfo(pl4nDir, info);
 }
 
 export async function isDaemonRunning(
-  thunkDir: string,
+  pl4nDir: string,
 ): Promise<{ running: boolean; port?: number; pid?: number }> {
-  const infoPath = serverInfoPath(thunkDir);
-  const info = await readServerInfo(thunkDir);
+  const infoPath = serverInfoPath(pl4nDir);
+  const info = await readServerInfo(pl4nDir);
   if (!info) {
     return { running: false };
   }
@@ -124,15 +124,15 @@ export async function isDaemonRunning(
 }
 
 export async function startDaemon(
-  thunkDir: string,
+  pl4nDir: string,
   options: StartOptions = {},
 ): Promise<{ pid: number; port: number }> {
   const spawn = options.spawn ?? Bun.spawn;
   const port = options.port ?? (await (options.findPort ?? findAvailablePort)(DEFAULT_PORT));
-  const cmd = await resolveDaemonCommand(thunkDir, port, options);
-  const env = { ...process.env, ...options.env, THUNK_DIR: thunkDir, THUNK_PORT: String(port) };
-  const logFile = options.logFile ?? path.join(thunkDir, "server.log");
-  await fs.mkdir(thunkDir, { recursive: true });
+  const cmd = await resolveDaemonCommand(pl4nDir, port, options);
+  const env = { ...process.env, ...options.env, PL4N_DIR: pl4nDir, PL4N_PORT: String(port) };
+  const logFile = options.logFile ?? path.join(pl4nDir, "server.log");
+  await fs.mkdir(pl4nDir, { recursive: true });
   const logHandle = await fs.open(logFile, "a");
 
   const proc = spawn({
@@ -148,7 +148,7 @@ export async function startDaemon(
   await logHandle.close();
 
   const now = (options.now ?? (() => new Date()))();
-  await writeServerInfo(thunkDir, {
+  await writeServerInfo(pl4nDir, {
     pid: proc.pid,
     port,
     started_at: now.toISOString(),
@@ -158,9 +158,9 @@ export async function startDaemon(
   return { pid: proc.pid, port };
 }
 
-export async function stopDaemon(thunkDir: string): Promise<boolean> {
-  const infoPath = serverInfoPath(thunkDir);
-  const info = await readServerInfo(thunkDir);
+export async function stopDaemon(pl4nDir: string): Promise<boolean> {
+  const infoPath = serverInfoPath(pl4nDir);
+  const info = await readServerInfo(pl4nDir);
   if (!info) {
     return false;
   }

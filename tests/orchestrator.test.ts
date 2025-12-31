@@ -5,12 +5,12 @@ import { describe, expect, it } from "bun:test";
 
 import { AgentHandle, AgentAdapter } from "../src/adapters/base";
 import type { AgentConfig } from "../src/models";
-import { Phase, ThunkConfig } from "../src/models";
+import { Phase, Pl4nConfig } from "../src/models";
 import { TurnOrchestrator } from "../src/orchestrator";
 import { SessionManager } from "../src/session";
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "thunk-orch-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "pl4n-orch-"));
   try {
     return await fn(root);
   } finally {
@@ -110,12 +110,12 @@ for (const line of lines) {
       );
 
       await withPatchedPath(binDir, async () => {
-        const manager = new SessionManager(path.join(root, ".thunk-test"));
+        const manager = new SessionManager(path.join(root, ".pl4n-test"));
         const state = await manager.createSession("Test task");
         state.phase = Phase.Drafting;
         await manager.saveState(state);
 
-        const orchestrator = new TurnOrchestrator(manager, ThunkConfig.default());
+        const orchestrator = new TurnOrchestrator(manager, Pl4nConfig.default());
         const success = await orchestrator.runTurn(state.sessionId);
         expect(success).toBe(true);
 
@@ -204,12 +204,12 @@ for (const line of lines) {
       );
 
       await withPatchedPath(binDir, async () => {
-        const manager = new SessionManager(path.join(root, ".thunk-test"));
+        const manager = new SessionManager(path.join(root, ".pl4n-test"));
         const state = await manager.createSession("Test task");
         state.phase = Phase.Drafting;
         await manager.saveState(state);
 
-        const orchestrator = new TurnOrchestrator(manager, ThunkConfig.default());
+        const orchestrator = new TurnOrchestrator(manager, Pl4nConfig.default());
         const runPromise = orchestrator.runTurn(state.sessionId);
 
         let waitError: unknown;
@@ -257,13 +257,13 @@ for (const line of lines) {
       ];
 
       for (const testCase of cases) {
-        const manager = new SessionManager(path.join(root, `.thunk-${testCase.id}`));
+        const manager = new SessionManager(path.join(root, `.pl4n-${testCase.id}`));
         const state = await manager.createSession("Test task");
         state.phase = Phase.Drafting;
         await manager.saveState(state);
 
         const agentConfig: AgentConfig = { id: "opus", type: "claude", model: "stub" };
-        const config = new ThunkConfig({
+        const config = new Pl4nConfig({
           agents: [agentConfig],
           synthesizer: { id: "synth", type: "claude", model: "stub" },
         });
@@ -284,14 +284,14 @@ for (const line of lines) {
 
   it("clears agent errors after successful runs", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk-test"));
+      const manager = new SessionManager(path.join(root, ".pl4n-test"));
       const state = await manager.createSession("Test task");
       state.phase = Phase.Drafting;
       state.agentErrors = { opus: "error: previous failure" };
       await manager.saveState(state);
 
       const agentConfig: AgentConfig = { id: "opus", type: "claude", model: "stub" };
-      const config = new ThunkConfig({
+      const config = new Pl4nConfig({
         agents: [agentConfig],
         synthesizer: { id: "synth", type: "claude", model: "stub" },
       });
@@ -313,14 +313,14 @@ for (const line of lines) {
 
   it("falls back to drafts when peer review fails", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk-test"));
+      const manager = new SessionManager(path.join(root, ".pl4n-test"));
       const state = await manager.createSession("Test task");
       state.phase = Phase.Drafting;
       await manager.saveState(state);
 
       const draft = "# Draft plan";
       const agentConfig: AgentConfig = { id: "opus", type: "claude", model: "stub" };
-      const config = new ThunkConfig({
+      const config = new Pl4nConfig({
         agents: [agentConfig],
         synthesizer: { id: "synth", type: "claude", model: "stub" },
       });
@@ -347,7 +347,7 @@ for (const line of lines) {
 
   it("returns diffs between turns", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk-test"));
+      const manager = new SessionManager(path.join(root, ".pl4n-test"));
       const state = await manager.createSession("Test task");
       const paths = manager.getPaths(state.sessionId);
 
@@ -358,7 +358,7 @@ for (const line of lines) {
       state.turn = 2;
       await manager.saveState(state);
 
-      const orchestrator = new TurnOrchestrator(manager, ThunkConfig.default());
+      const orchestrator = new TurnOrchestrator(manager, Pl4nConfig.default());
       const diff = await orchestrator.getDiff(state.sessionId);
 
       expect(diff).toContain("turn-001.md");
@@ -368,7 +368,7 @@ for (const line of lines) {
 
   it("generates user feedback diff when snapshots exist", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk-test"));
+      const manager = new SessionManager(path.join(root, ".pl4n-test"));
       const state = await manager.createSession("Test task");
       const paths = manager.getPaths(state.sessionId);
 
@@ -379,7 +379,7 @@ for (const line of lines) {
       state.turn = 2;
       await manager.saveState(state);
 
-      const orchestrator = new TurnOrchestrator(manager, ThunkConfig.default());
+      const orchestrator = new TurnOrchestrator(manager, Pl4nConfig.default());
       const feedback = await (
         orchestrator as unknown as {
           getUserFeedback: (
@@ -408,11 +408,11 @@ process.exit(1);
       );
 
       await withPatchedPath(binDir, async () => {
-        const manager = new SessionManager(path.join(root, ".thunk-test"));
+        const manager = new SessionManager(path.join(root, ".pl4n-test"));
         const state = await manager.createSession("Test task");
         const paths = manager.getPaths(state.sessionId);
 
-        const orchestrator = new TurnOrchestrator(manager, ThunkConfig.default());
+        const orchestrator = new TurnOrchestrator(manager, Pl4nConfig.default());
         const result = await (
           orchestrator as unknown as {
             synthesize: (
@@ -438,11 +438,11 @@ process.exit(1);
 
   it("returns the single agent plan without synthesis", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk-test"));
+      const manager = new SessionManager(path.join(root, ".pl4n-test"));
       const state = await manager.createSession("Test task");
       const paths = manager.getPaths(state.sessionId);
 
-      const orchestrator = new TurnOrchestrator(manager, ThunkConfig.default());
+      const orchestrator = new TurnOrchestrator(manager, Pl4nConfig.default());
       const result = await (
         orchestrator as unknown as {
           synthesize: (

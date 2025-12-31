@@ -51,7 +51,7 @@ export type AgentStatusMap = Record<string, AgentStatus>;
 export type AgentPlanIdMap = Record<string, string>;
 export type AgentErrorMap = Record<string, string>;
 
-type ThunkConfigParams = {
+type Pl4nConfigParams = {
   agents: AgentConfig[];
   synthesizer: AgentConfig;
   timeout?: number;
@@ -86,7 +86,7 @@ function cloneCodexConfig(config: CodexConfig): CodexConfig {
   };
 }
 
-function defaultConfigParams(): ThunkConfigParams {
+function defaultConfigParams(): Pl4nConfigParams {
   return {
     agents: [
       {
@@ -338,7 +338,7 @@ function parseAgents(value: unknown, defaults: AgentDefaults): AgentConfig[] {
   return agents;
 }
 
-function parseThunkConfig(value: unknown): ThunkConfigParams {
+function parsePl4nConfig(value: unknown): Pl4nConfigParams {
   if (!isRecord(value)) {
     throw new Error("config must be a mapping");
   }
@@ -370,10 +370,10 @@ function parseThunkConfig(value: unknown): ThunkConfigParams {
   return { agents, synthesizer, timeout };
 }
 
-async function resolveConfigPath(thunkDir: string): Promise<string | null> {
-  const candidates = ["thunk.yaml", "thunk.yml"];
+async function resolveConfigPath(pl4nDir: string): Promise<string | null> {
+  const candidates = ["pl4n.yaml", "pl4n.yml"];
   for (const candidate of candidates) {
-    const fullPath = path.join(thunkDir, candidate);
+    const fullPath = path.join(pl4nDir, candidate);
     try {
       await fs.access(fullPath);
       return fullPath;
@@ -485,44 +485,44 @@ export class SessionPaths {
   }
 }
 
-export class ThunkConfig {
+export class Pl4nConfig {
   agents: AgentConfig[];
   synthesizer: AgentConfig;
   timeout?: number;
 
-  constructor(params: ThunkConfigParams) {
+  constructor(params: Pl4nConfigParams) {
     this.agents = params.agents;
     this.synthesizer = params.synthesizer;
     this.timeout = params.timeout;
   }
 
-  static default(): ThunkConfig {
-    return new ThunkConfig(defaultConfigParams());
+  static default(): Pl4nConfig {
+    return new Pl4nConfig(defaultConfigParams());
   }
 
-  static async loadFromThunkDir(thunkDir: string): Promise<ThunkConfig> {
-    const configPath = await resolveConfigPath(thunkDir);
+  static async loadFromPl4nDir(pl4nDir: string): Promise<Pl4nConfig> {
+    const configPath = await resolveConfigPath(pl4nDir);
     if (!configPath) {
-      return ThunkConfig.default();
+      return Pl4nConfig.default();
     }
-    return ThunkConfig.loadFromFile(configPath);
+    return Pl4nConfig.loadFromFile(configPath);
   }
 
-  static fromConfigData(data: unknown, source: string): ThunkConfig {
+  static fromConfigData(data: unknown, source: string): Pl4nConfig {
     if (data === undefined || data === null) {
       throw new Error(`Invalid config ${source}: config is empty`);
     }
 
     try {
-      const parsed = parseThunkConfig(data);
-      return new ThunkConfig(parsed);
+      const parsed = parsePl4nConfig(data);
+      return new Pl4nConfig(parsed);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Invalid config";
       throw new Error(`Invalid config ${source}: ${message}`);
     }
   }
 
-  static async loadFromFile(configPath: string): Promise<ThunkConfig> {
+  static async loadFromFile(configPath: string): Promise<Pl4nConfig> {
     const content = await fs.readFile(configPath, "utf8");
     let data: unknown;
     try {
@@ -531,7 +531,7 @@ export class ThunkConfig {
       const message = error instanceof Error ? error.message : "Failed to parse YAML";
       throw new Error(`Invalid config ${configPath}: ${message}`);
     }
-    return ThunkConfig.fromConfigData(data, configPath);
+    return Pl4nConfig.fromConfigData(data, configPath);
   }
 
   toConfigDict(): Record<string, unknown> {

@@ -1,5 +1,5 @@
 ---
-description: Start a multi-agent planning session for a task. Creates a thunk session and waits for agents to complete the first turn.
+description: Start a multi-agent planning session for a task. Creates a pl4n session and waits for agents to complete the first turn.
 ---
 
 # Plan Task
@@ -35,7 +35,7 @@ Interview the user in depth using the AskUserQuestion tool to understand what th
 - Continue asking questions until you have a comprehensive understanding
 - Each round, ask 2-4 focused questions on different aspects
 
-When the interview is complete, write a comprehensive spec to `.thunk/task-temp.md` summarizing everything discussed, then proceed to Step 3.
+When the interview is complete, write a comprehensive spec to `.pl4n/task-temp.md` summarizing everything discussed, then proceed to Step 3.
 
 ### Option 2: Spec File
 
@@ -43,22 +43,22 @@ Ask for the file path, then proceed to Step 3 using that file directly with `--f
 
 ### Option 3: Paste Description
 
-Ask the user to paste their description. Once received, write it to `.thunk/task-temp.md`, then proceed to Step 3.
+Ask the user to paste their description. Once received, write it to `.pl4n/task-temp.md`, then proceed to Step 3.
 
 ## Step 3: Initialize and Run
 
-Prerequisites: If `thunk` is not found (exit code 127), run `bun install` first.
+Prerequisites: If `pl4n` is not found (exit code 127), run `bun install` first.
 
-1. Run thunk init:
-   - For spec file: `thunk init --file "<filepath>"`
-   - For interview/paste: `thunk init --file .thunk/task-temp.md`
+1. Run pl4n init:
+   - For spec file: `pl4n init --file "<filepath>"`
+   - For interview/paste: `pl4n init --file .pl4n/task-temp.md`
 
 2. Capture the `session_id` from the JSON output
 
-3. Run `thunk wait --session <session_id>` to wait for agents to complete
+3. Run `pl4n wait --session <session_id>` to wait for agents to complete
 
 4. When complete, tell the user:
-   - The path to the plan file (`.thunk/sessions/<id>/turns/001.md`)
+   - The path to the plan file (`.pl4n/sessions/<id>/turns/001.md`)
    - They should review and edit the file
-   - When done editing, use `/thunk:continue <session_id>` to start the next turn
-   - Or `/thunk:approve <session_id>` if satisfied
+   - When done editing, use `/pl4n:continue <session_id>` to start the next turn
+   - Or `/pl4n:approve <session_id>` if satisfied

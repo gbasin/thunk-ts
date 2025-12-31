@@ -53,12 +53,12 @@ body {
   justify-content: center;
 }
 
-thunk-editor {
+pl4n-editor {
   width: min(1400px, 100%);
   height: 100%;
 }
 
-thunk-list {
+pl4n-list {
   width: min(1400px, 100%);
 }
 

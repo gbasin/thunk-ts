@@ -21,7 +21,7 @@ import { createHandlers } from "../src/server/handlers";
 import { findAvailablePort, getLocalIP } from "../src/server/network";
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "thunk-server-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "pl4n-server-"));
   try {
     return await fn(root);
   } finally {
@@ -34,7 +34,7 @@ async function readJson(response: Response): Promise<Record<string, unknown>> {
 }
 
 function extractListPayload(html: string): { sessions: Record<string, unknown>[] } {
-  const marker = "window.__THUNK_LIST__ = ";
+  const marker = "window.__PL4N_LIST__ = ";
   const start = html.indexOf(marker);
   if (start < 0) {
     throw new Error("missing list payload");
@@ -59,19 +59,19 @@ describe("auth", () => {
 
   it("creates and validates global token", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk");
-      const token = await ensureGlobalToken(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n");
+      const token = await ensureGlobalToken(pl4nDir);
       expect(token.length).toBe(16);
-      const same = await ensureGlobalToken(thunkDir);
+      const same = await ensureGlobalToken(pl4nDir);
       expect(same).toBe(token);
-      expect(await validateGlobalToken(token, thunkDir)).toBe(true);
-      expect(await validateGlobalToken("bad", thunkDir)).toBe(false);
+      expect(await validateGlobalToken(token, pl4nDir)).toBe(true);
+      expect(await validateGlobalToken("bad", pl4nDir)).toBe(false);
     });
   });
 
   it("validates session token", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk"));
+      const manager = new SessionManager(path.join(root, ".pl4n"));
       const state = await manager.createSession("Test tokens");
       const token = state.sessionToken ?? "";
 
@@ -82,16 +82,16 @@ describe("auth", () => {
 });
 
 describe("network", () => {
-  it("returns THUNK_HOST override", () => {
-    const original = process.env.THUNK_HOST;
-    process.env.THUNK_HOST = "100.100.100.100";
+  it("returns PL4N_HOST override", () => {
+    const original = process.env.PL4N_HOST;
+    process.env.PL4N_HOST = "100.100.100.100";
     try {
       expect(getLocalIP()).toBe("100.100.100.100");
     } finally {
       if (original === undefined) {
-        delete process.env.THUNK_HOST;
+        delete process.env.PL4N_HOST;
       } else {
-        process.env.THUNK_HOST = original;
+        process.env.PL4N_HOST = original;
       }
     }
   });
@@ -118,9 +118,9 @@ describe("network", () => {
 describe("daemon", () => {
   it("starts daemon with stubbed spawn", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk");
+      const pl4nDir = path.join(root, ".pl4n");
       const spawned: string[][] = [];
-      const result = await startDaemon(thunkDir, {
+      const result = await startDaemon(pl4nDir, {
         port: 4567,
         now: () => new Date("2024-01-01T00:00:00Z"),
         spawn: (options) => {
@@ -133,7 +133,7 @@ describe("daemon", () => {
       expect(result.port).toBe(4567);
       expect(spawned.length).toBe(1);
 
-      const infoPath = path.join(thunkDir, "server.json");
+      const infoPath = path.join(pl4nDir, "server.json");
       const raw = await fs.readFile(infoPath, "utf8");
       const info = JSON.parse(raw) as { pid: number; port: number; last_activity: string };
       expect(info.pid).toBe(2222);
@@ -144,10 +144,10 @@ describe("daemon", () => {
 
   it("updates server activity timestamp", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk");
-      await fs.mkdir(thunkDir, { recursive: true });
+      const pl4nDir = path.join(root, ".pl4n");
+      await fs.mkdir(pl4nDir, { recursive: true });
       await fs.writeFile(
-        path.join(thunkDir, "server.json"),
+        path.join(pl4nDir, "server.json"),
         JSON.stringify({
           pid: 2222,
           port: 4567,
@@ -158,9 +158,9 @@ describe("daemon", () => {
       );
 
       const now = new Date("2024-02-01T00:00:00Z");
-      await updateServerActivity(thunkDir, now);
+      await updateServerActivity(pl4nDir, now);
 
-      const raw = await fs.readFile(path.join(thunkDir, "server.json"), "utf8");
+      const raw = await fs.readFile(path.join(pl4nDir, "server.json"), "utf8");
       const info = JSON.parse(raw) as { last_activity: string };
       expect(info.last_activity).toBe(now.toISOString());
     });
@@ -168,26 +168,26 @@ describe("daemon", () => {
 
   it("detects stale daemon", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk");
-      await fs.mkdir(thunkDir, { recursive: true });
+      const pl4nDir = path.join(root, ".pl4n");
+      await fs.mkdir(pl4nDir, { recursive: true });
       await fs.writeFile(
-        path.join(thunkDir, "server.json"),
+        path.join(pl4nDir, "server.json"),
         JSON.stringify({ pid: 999999, port: 9999 }),
         "utf8",
       );
 
-      const status = await isDaemonRunning(thunkDir);
+      const status = await isDaemonRunning(pl4nDir);
       expect(status.running).toBe(false);
-      await expect(fs.readFile(path.join(thunkDir, "server.json"), "utf8")).rejects.toBeDefined();
+      await expect(fs.readFile(path.join(pl4nDir, "server.json"), "utf8")).rejects.toBeDefined();
     });
   });
 
   it("stops daemon when pid is killable", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk");
-      await fs.mkdir(thunkDir, { recursive: true });
+      const pl4nDir = path.join(root, ".pl4n");
+      await fs.mkdir(pl4nDir, { recursive: true });
       await fs.writeFile(
-        path.join(thunkDir, "server.json"),
+        path.join(pl4nDir, "server.json"),
         JSON.stringify({ pid: 1234, port: 9999 }),
         "utf8",
       );
@@ -201,7 +201,7 @@ describe("daemon", () => {
       }) as typeof process.kill;
 
       try {
-        const stopped = await stopDaemon(thunkDir);
+        const stopped = await stopDaemon(pl4nDir);
         expect(stopped).toBe(true);
       } finally {
         process.kill = originalKill;
@@ -211,10 +211,10 @@ describe("daemon", () => {
 
   it("returns false when daemon pid is missing", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk");
-      await fs.mkdir(thunkDir, { recursive: true });
+      const pl4nDir = path.join(root, ".pl4n");
+      await fs.mkdir(pl4nDir, { recursive: true });
       await fs.writeFile(
-        path.join(thunkDir, "server.json"),
+        path.join(pl4nDir, "server.json"),
         JSON.stringify({ pid: 7777, port: 9999 }),
         "utf8",
       );
@@ -230,9 +230,9 @@ describe("daemon", () => {
       }) as typeof process.kill;
 
       try {
-        const stopped = await stopDaemon(thunkDir);
+        const stopped = await stopDaemon(pl4nDir);
         expect(stopped).toBe(false);
-        await expect(fs.readFile(path.join(thunkDir, "server.json"), "utf8")).rejects.toBeDefined();
+        await expect(fs.readFile(path.join(pl4nDir, "server.json"), "utf8")).rejects.toBeDefined();
       } finally {
         process.kill = originalKill;
       }
@@ -241,10 +241,10 @@ describe("daemon", () => {
 
   it("propagates daemon stop errors", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk");
-      await fs.mkdir(thunkDir, { recursive: true });
+      const pl4nDir = path.join(root, ".pl4n");
+      await fs.mkdir(pl4nDir, { recursive: true });
       await fs.writeFile(
-        path.join(thunkDir, "server.json"),
+        path.join(pl4nDir, "server.json"),
         JSON.stringify({ pid: 8888, port: 9999 }),
         "utf8",
       );
@@ -260,7 +260,7 @@ describe("daemon", () => {
       }) as typeof process.kill;
 
       try {
-        await expect(stopDaemon(thunkDir)).rejects.toBeDefined();
+        await expect(stopDaemon(pl4nDir)).rejects.toBeDefined();
       } finally {
         process.kill = originalKill;
       }
@@ -271,13 +271,13 @@ describe("daemon", () => {
 describe("handlers", () => {
   it("serves edit template with read-only based on phase", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Edit task");
       state.phase = Phase.UserReview;
       await manager.saveState(state);
 
-      const handlers = createHandlers({ thunkDir, manager });
+      const handlers = createHandlers({ pl4nDir, manager });
       const token = state.sessionToken ?? "";
 
       const editRes = await handlers.handleEdit(
@@ -306,13 +306,13 @@ describe("handlers", () => {
 
   it("rejects edit when token is invalid", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Edit task");
       state.phase = Phase.UserReview;
       await manager.saveState(state);
 
-      const handlers = createHandlers({ thunkDir, manager });
+      const handlers = createHandlers({ pl4nDir, manager });
       const res = await handlers.handleEdit(
         new Request(`http://localhost/edit/${state.sessionId}?t=bad`),
         state.sessionId,
@@ -323,8 +323,8 @@ describe("handlers", () => {
 
   it("serves content and drafts", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Plan task");
       state.phase = Phase.UserReview;
       await manager.saveState(state);
@@ -335,7 +335,7 @@ describe("handlers", () => {
       const stat = await fs.stat(paths.turnFile(state.turn));
 
       const token = state.sessionToken ?? "";
-      const handlers = createHandlers({ thunkDir, manager, spawn: () => ({ pid: 1 }) });
+      const handlers = createHandlers({ pl4nDir, manager, spawn: () => ({ pid: 1 }) });
 
       const contentRes = await handlers.handleGetContent(
         new Request(`http://localhost/api/content/${state.sessionId}?t=${token}`),
@@ -369,8 +369,8 @@ describe("handlers", () => {
 
   it("loads plan file when approved and falls back when missing", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Plan task");
       state.phase = Phase.Approved;
       await manager.saveState(state);
@@ -380,7 +380,7 @@ describe("handlers", () => {
       await fs.writeFile(paths.turnFile(state.turn), "Turn content\n", "utf8");
 
       const token = state.sessionToken ?? "";
-      const handlers = createHandlers({ thunkDir, manager });
+      const handlers = createHandlers({ pl4nDir, manager });
 
       const fallbackRes = await handlers.handleGetContent(
         new Request(`http://localhost/api/content/${state.sessionId}?t=${token}`),
@@ -405,8 +405,8 @@ describe("handlers", () => {
 
   it("returns session list without edit links when not in user review", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n");
+      const manager = new SessionManager(pl4nDir);
       const review = await manager.createSession("<script>alert(1)</script>");
       review.phase = Phase.UserReview;
       await manager.saveState(review);
@@ -414,8 +414,8 @@ describe("handlers", () => {
       approved.phase = Phase.Approved;
       await manager.saveState(approved);
 
-      const handlers = createHandlers({ thunkDir, manager });
-      const token = await ensureGlobalToken(thunkDir);
+      const handlers = createHandlers({ pl4nDir, manager });
+      const token = await ensureGlobalToken(pl4nDir);
       const listRes = await handlers.handleList(new Request(`http://localhost/list?t=${token}`));
       expect(listRes.status).toBe(200);
       const html = await listRes.text();
@@ -438,8 +438,8 @@ describe("handlers", () => {
 
   it("handles save conflicts and continue", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Plan task");
       state.phase = Phase.UserReview;
       await manager.saveState(state);
@@ -452,7 +452,7 @@ describe("handlers", () => {
       let spawned = false;
 
       const handlers = createHandlers({
-        thunkDir,
+        pl4nDir,
         manager,
         spawn: () => {
           spawned = true;
@@ -497,13 +497,13 @@ describe("handlers", () => {
 
   it("rejects save and draft when session is locked", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Plan task");
       state.phase = Phase.Approved;
       await manager.saveState(state);
 
-      const handlers = createHandlers({ thunkDir, manager });
+      const handlers = createHandlers({ pl4nDir, manager });
       const token = state.sessionToken ?? "";
 
       const saveRes = await handlers.handleSave(
@@ -530,13 +530,13 @@ describe("handlers", () => {
 
   it("deletes drafts when requested", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Plan task");
       state.phase = Phase.UserReview;
       await manager.saveState(state);
 
-      const handlers = createHandlers({ thunkDir, manager });
+      const handlers = createHandlers({ pl4nDir, manager });
       const token = state.sessionToken ?? "";
 
       const draftRes = await handlers.handleDraft(
@@ -568,13 +568,13 @@ describe("handlers", () => {
 
   it("rejects invalid payloads and tokens for status", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Plan task");
       state.phase = Phase.UserReview;
       await manager.saveState(state);
 
-      const handlers = createHandlers({ thunkDir, manager });
+      const handlers = createHandlers({ pl4nDir, manager });
 
       const badSave = await handlers.handleSave(
         new Request(`http://localhost/api/save/${state.sessionId}?t=${state.sessionToken ?? ""}`, {
@@ -596,18 +596,18 @@ describe("handlers", () => {
 
   it("validates tokens and serves list", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Plan task");
       state.phase = Phase.UserReview;
       await manager.saveState(state);
 
-      const handlers = createHandlers({ thunkDir, manager });
+      const handlers = createHandlers({ pl4nDir, manager });
 
       const badList = await handlers.handleList(new Request("http://localhost/list?t=bad"));
       expect(badList.status).toBe(401);
 
-      const token = await ensureGlobalToken(thunkDir);
+      const token = await ensureGlobalToken(pl4nDir);
       const listRes = await handlers.handleList(new Request(`http://localhost/list?t=${token}`));
       expect(listRes.status).toBe(200);
       const body = await listRes.text();
@@ -623,9 +623,9 @@ describe("handlers", () => {
 
   it("rejects asset traversal attempts", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk");
-      const manager = new SessionManager(thunkDir);
-      const handlers = createHandlers({ thunkDir, manager });
+      const pl4nDir = path.join(root, ".pl4n");
+      const manager = new SessionManager(pl4nDir);
+      const handlers = createHandlers({ pl4nDir, manager });
 
       const res = await handlers.handleAssets(
         new Request("http://localhost/assets/../secret"),
@@ -637,9 +637,9 @@ describe("handlers", () => {
 
   it("builds and serves editor.js from TypeScript source", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk");
-      const manager = new SessionManager(thunkDir);
-      const handlers = createHandlers({ thunkDir, manager });
+      const pl4nDir = path.join(root, ".pl4n");
+      const manager = new SessionManager(pl4nDir);
+      const handlers = createHandlers({ pl4nDir, manager });
 
       const res = await handlers.handleAssets(
         new Request("http://localhost/assets/editor.js"),
@@ -651,16 +651,16 @@ describe("handlers", () => {
 
       const js = await res.text();
       expect(js.length).toBeGreaterThan(1000);
-      expect(js).toContain("ThunkEditor");
+      expect(js).toContain("Pl4nEditor");
       expect(js).toContain("customElements.define");
     });
   });
 
   it("builds and serves list.js from TypeScript source", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk");
-      const manager = new SessionManager(thunkDir);
-      const handlers = createHandlers({ thunkDir, manager });
+      const pl4nDir = path.join(root, ".pl4n");
+      const manager = new SessionManager(pl4nDir);
+      const handlers = createHandlers({ pl4nDir, manager });
 
       const res = await handlers.handleAssets(
         new Request("http://localhost/assets/list.js"),
@@ -668,28 +668,28 @@ describe("handlers", () => {
       );
       expect(res.status).toBe(200);
       const js = await res.text();
-      expect(js).toContain("ThunkList");
+      expect(js).toContain("Pl4nList");
     });
   });
 
   it("idles when inactive and no user review", async () => {
     await withTempDir(async (root) => {
-      const thunkDir = path.join(root, ".thunk");
-      const manager = new SessionManager(thunkDir);
+      const pl4nDir = path.join(root, ".pl4n");
+      const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Plan task");
       state.phase = Phase.Approved;
       await manager.saveState(state);
 
-      await fs.mkdir(thunkDir, { recursive: true });
+      await fs.mkdir(pl4nDir, { recursive: true });
       await fs.writeFile(
-        path.join(thunkDir, "server.json"),
+        path.join(pl4nDir, "server.json"),
         JSON.stringify({
           last_activity: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
         }),
         "utf8",
       );
 
-      const handlers = createHandlers({ thunkDir, manager });
+      const handlers = createHandlers({ pl4nDir, manager });
       const shouldIdle = await handlers.handleIdleCheck();
       expect(shouldIdle).toBe(true);
     });

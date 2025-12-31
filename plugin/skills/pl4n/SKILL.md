@@ -1,43 +1,43 @@
 ---
-description: Multi-agent ensemble planning with thunk CLI. Use when discussing implementation plans, task planning, or when user mentions thunk sessions. Knows thunk CLI syntax and workflow.
+description: Multi-agent ensemble planning with pl4n CLI. Use when discussing implementation plans, task planning, or when user mentions pl4n sessions. Knows pl4n CLI syntax and workflow.
 ---
 
-# Thunk Planning Workflow
+# Pl4n Planning Workflow
 
-## Setup (if thunk command not found)
+## Setup (if pl4n command not found)
 
-If the `thunk` command is not available, install it first:
+If the `pl4n` command is not available, install it first:
 
 ```bash
-cd /path/to/thunk-ts/repo
+cd /path/to/pl4n/repo
 bun install
 ```
 
-Thunk orchestrates multiple AI agents (Claude Code + OpenAI Codex) to create implementation plans through iterative refinement.
+Pl4n orchestrates multiple AI agents (Claude Code + OpenAI Codex) to create implementation plans through iterative refinement.
 
 ## Quick Reference
 
 | Command | Purpose |
 |---------|---------|
-| `thunk init "task"` | Start new planning session (short description) |
-| `thunk init --file spec.md` | Start session from file (for large specs) |
-| `thunk wait --session <id>` | Block until turn complete |
-| `thunk status --session <id>` | Check progress |
-| `thunk continue --session <id>` | Start next turn after edits |
-| `thunk approve --session <id>` | Lock plan as final |
-| `thunk list` | List all sessions |
-| `thunk clean --session <id>` | Remove session |
-| `thunk diff --session <id>` | Show changes between turns |
+| `pl4n init "task"` | Start new planning session (short description) |
+| `pl4n init --file spec.md` | Start session from file (for large specs) |
+| `pl4n wait --session <id>` | Block until turn complete |
+| `pl4n status --session <id>` | Check progress |
+| `pl4n continue --session <id>` | Start next turn after edits |
+| `pl4n approve --session <id>` | Lock plan as final |
+| `pl4n list` | List all sessions |
+| `pl4n clean --session <id>` | Remove session |
+| `pl4n diff --session <id>` | Show changes between turns |
 
 ## Slash Commands
 
 | Command | Purpose |
 |---------|---------|
-| `/thunk:plan` | Interactive planning - choose interview, spec file, or paste |
-| `/thunk:continue <id>` | Continue after editing turn file |
-| `/thunk:approve <id>` | Lock plan as final |
-| `/thunk:status <id>` | Check session status |
-| `/thunk:list` | List all sessions |
+| `/pl4n:plan` | Interactive planning - choose interview, spec file, or paste |
+| `/pl4n:continue <id>` | Continue after editing turn file |
+| `/pl4n:approve <id>` | Lock plan as final |
+| `/pl4n:status <id>` | Check session status |
+| `/pl4n:list` | List all sessions |
 
 ## Workflow
 
@@ -47,7 +47,7 @@ init → wait → [user edits] → continue → wait → ... → approve
 
 1. **init**: Creates session, agents start exploring codebase
 2. **wait**: Blocks until agents complete draft → peer review → synthesis
-3. **User edits**: Human reviews `.thunk/sessions/<id>/turns/NNN.md`
+3. **User edits**: Human reviews `.pl4n/sessions/<id>/turns/NNN.md`
 4. **continue**: Starts next turn, agents refine based on edits
 5. **approve**: Locks plan, creates PLAN.md symlink
 
@@ -88,7 +88,7 @@ init → wait → [user edits] → continue → wait → ... → approve
 ## Session File Structure
 
 ```
-.thunk/sessions/swift-river/       # Human-friendly session ID
+.pl4n/sessions/swift-river/       # Human-friendly session ID
 ├── meta.yaml           # Task, created_at
 ├── state.yaml          # turn, phase, agent_plan_ids
 ├── bold-peak.md        # Agent's working plan (opaque name)

@@ -1,4 +1,4 @@
-# Thunk configuration
+# Pl4n configuration
 claude:
   allowed_tools:
     - Read

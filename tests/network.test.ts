@@ -6,9 +6,9 @@ import { findAvailablePort, getLocalIP } from "../src/server/network";
 
 describe("getLocalIP", () => {
   it("prefers candidate interfaces and skips link-local addresses", () => {
-    const originalHost = process.env.THUNK_HOST;
+    const originalHost = process.env.PL4N_HOST;
     if (originalHost !== undefined) {
-      delete process.env.THUNK_HOST;
+      delete process.env.PL4N_HOST;
     }
     const originalInterfaces = os.networkInterfaces;
     os.networkInterfaces = () =>
@@ -46,17 +46,17 @@ describe("getLocalIP", () => {
     } finally {
       os.networkInterfaces = originalInterfaces;
       if (originalHost === undefined) {
-        delete process.env.THUNK_HOST;
+        delete process.env.PL4N_HOST;
       } else {
-        process.env.THUNK_HOST = originalHost;
+        process.env.PL4N_HOST = originalHost;
       }
     }
   });
 
   it("returns localhost when no external IPv4 addresses exist", () => {
-    const originalHost = process.env.THUNK_HOST;
+    const originalHost = process.env.PL4N_HOST;
     if (originalHost !== undefined) {
-      delete process.env.THUNK_HOST;
+      delete process.env.PL4N_HOST;
     }
     const originalInterfaces = os.networkInterfaces;
     os.networkInterfaces = () =>
@@ -89,9 +89,9 @@ describe("getLocalIP", () => {
     } finally {
       os.networkInterfaces = originalInterfaces;
       if (originalHost === undefined) {
-        delete process.env.THUNK_HOST;
+        delete process.env.PL4N_HOST;
       } else {
-        process.env.THUNK_HOST = originalHost;
+        process.env.PL4N_HOST = originalHost;
       }
     }
   });

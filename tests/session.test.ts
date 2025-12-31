@@ -4,11 +4,11 @@ import path from "path";
 import { describe, expect, it } from "bun:test";
 import { dump, load } from "js-yaml";
 
-import { Phase, ThunkConfig } from "../src/models";
+import { Phase, Pl4nConfig } from "../src/models";
 import { SessionManager } from "../src/session";
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "thunk-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "pl4n-"));
   try {
     return await fn(root);
   } finally {
@@ -19,7 +19,7 @@ async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
 describe("SessionManager", () => {
   it("creates and loads a session", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk-test"));
+      const manager = new SessionManager(path.join(root, ".pl4n-test"));
       const state = await manager.createSession("Add caching layer");
 
       expect(state.sessionId).toContain("-");
@@ -38,8 +38,8 @@ describe("SessionManager", () => {
 
   it("stores config snapshot in meta", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk-test"));
-      const config = new ThunkConfig({
+      const manager = new SessionManager(path.join(root, ".pl4n-test"));
+      const config = new Pl4nConfig({
         agents: [
           {
             id: "alpha",
@@ -91,7 +91,7 @@ describe("SessionManager", () => {
 
   it("lists sessions", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk-test"));
+      const manager = new SessionManager(path.join(root, ".pl4n-test"));
       await manager.createSession("Task 1");
       await manager.createSession("Task 2");
 
@@ -104,7 +104,7 @@ describe("SessionManager", () => {
 
   it("saves state changes", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk-test"));
+      const manager = new SessionManager(path.join(root, ".pl4n-test"));
       const state = await manager.createSession("Test task");
       state.turn = 2;
       state.phase = Phase.UserReview;
@@ -118,7 +118,7 @@ describe("SessionManager", () => {
 
   it("persists agent errors in state", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk-test"));
+      const manager = new SessionManager(path.join(root, ".pl4n-test"));
       const state = await manager.createSession("Test task");
       state.agentErrors = { codex: "error: draft failed" };
       await manager.saveState(state);
@@ -135,7 +135,7 @@ describe("SessionManager", () => {
 
   it("writes session token to state.yaml", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk-test"));
+      const manager = new SessionManager(path.join(root, ".pl4n-test"));
       const state = await manager.createSession("Token task");
       const paths = manager.getPaths(state.sessionId);
       const stateContent = await fs.readFile(paths.state, "utf8");
@@ -147,7 +147,7 @@ describe("SessionManager", () => {
 
   it("ensures session token when missing", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk-test"));
+      const manager = new SessionManager(path.join(root, ".pl4n-test"));
       const state = await manager.createSession("Token recovery");
       const paths = manager.getPaths(state.sessionId);
       const stateContent = await fs.readFile(paths.state, "utf8");
@@ -165,7 +165,7 @@ describe("SessionManager", () => {
 
   it("cleans sessions", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk-test"));
+      const manager = new SessionManager(path.join(root, ".pl4n-test"));
       const state = await manager.createSession("Test task");
 
       const cleaned = await manager.cleanSession(state.sessionId);
@@ -178,7 +178,7 @@ describe("SessionManager", () => {
 
   it("returns null for missing session", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk-test"));
+      const manager = new SessionManager(path.join(root, ".pl4n-test"));
       const loaded = await manager.loadSession("missing-session");
       expect(loaded).toBeNull();
     });
@@ -186,14 +186,14 @@ describe("SessionManager", () => {
 
   it("throws when ensuring token for missing session", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk-test"));
+      const manager = new SessionManager(path.join(root, ".pl4n-test"));
       await expect(manager.ensureSessionToken("missing-session")).rejects.toBeDefined();
     });
   });
 
   it("returns false when cleaning missing session", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk-test"));
+      const manager = new SessionManager(path.join(root, ".pl4n-test"));
       const cleaned = await manager.cleanSession("missing-session");
       expect(cleaned).toBe(false);
     });
@@ -201,7 +201,7 @@ describe("SessionManager", () => {
 
   it("detects unanswered questions", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk-test"));
+      const manager = new SessionManager(path.join(root, ".pl4n-test"));
       const state = await manager.createSession("Test task");
       const paths = manager.getPaths(state.sessionId);
 
@@ -218,7 +218,7 @@ describe("SessionManager", () => {
 
   it("allows approval when questions answered", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk-test"));
+      const manager = new SessionManager(path.join(root, ".pl4n-test"));
       const state = await manager.createSession("Test task");
       const paths = manager.getPaths(state.sessionId);
 
@@ -235,7 +235,7 @@ describe("SessionManager", () => {
 
   it("treats next-line answers as answered", async () => {
     await withTempDir(async (root) => {
-      const manager = new SessionManager(path.join(root, ".thunk-test"));
+      const manager = new SessionManager(path.join(root, ".pl4n-test"));
       const state = await manager.createSession("Test task");
       const paths = manager.getPaths(state.sessionId);
 
