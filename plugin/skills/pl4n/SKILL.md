@@ -19,11 +19,10 @@ Pl4n orchestrates multiple AI agents (Claude Code + OpenAI Codex) to create impl
 
 | Command | Purpose |
 |---------|---------|
-| `pl4n init "task"` | Start new planning session (short description) |
+| `pl4n init "task"` | Start new planning session (blocks until first turn complete) |
 | `pl4n init --file spec.md` | Start session from file (for large specs) |
-| `pl4n wait --session <id>` | Block until turn complete |
 | `pl4n status --session <id>` | Check progress |
-| `pl4n continue --session <id>` | Start next turn after edits |
+| `pl4n continue --session <id>` | Start next turn after edits (blocks until complete) |
 | `pl4n approve --session <id>` | Lock plan as final |
 | `pl4n list` | List all sessions |
 | `pl4n clean --session <id>` | Remove session |
@@ -42,14 +41,13 @@ Pl4n orchestrates multiple AI agents (Claude Code + OpenAI Codex) to create impl
 ## Workflow
 
 ```
-init → wait → [user edits] → continue → wait → ... → approve
+init → [user edits] → continue → [user edits] → ... → approve
 ```
 
-1. **init**: Creates session, agents start exploring codebase
-2. **wait**: Blocks until agents complete draft → peer review → synthesis
-3. **User edits**: Human reviews `.pl4n/sessions/<id>/turns/NNN.md`
-4. **continue**: Starts next turn, agents refine based on edits
-5. **approve**: Locks plan, creates PLAN.md symlink
+1. **init**: Creates session, runs first turn (blocks until complete)
+2. **User edits**: Human reviews `.pl4n/sessions/<id>/turns/NNN.md`
+3. **continue**: Starts next turn, runs agents (blocks until complete)
+4. **approve**: Locks plan, creates PLAN.md symlink
 
 ## Session Phases
 

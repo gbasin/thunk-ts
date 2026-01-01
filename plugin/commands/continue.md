@@ -16,9 +16,8 @@ Then continue with the steps below.
 
 ## Steps
 
-1. Run `pl4n continue --session $ARGUMENTS`
-2. Run `pl4n wait --session $ARGUMENTS` to wait for agents
-3. When complete, tell the user:
+1. Run `pl4n continue --session $ARGUMENTS` (blocks until agents complete)
+2. When complete, tell the user:
    - The new turn number
    - The path to the updated plan file
    - They can edit again and `/pl4n:continue`, or `/pl4n:approve` if satisfied

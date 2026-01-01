@@ -106,7 +106,6 @@ describe("Pl4nConfig", () => {
     expect(config.agents[1].codex?.fullAuto).toBe(true);
     expect(config.agents[1].codex?.search).toBe(true);
     expect(config.synthesizer.id).toBe("synthesizer");
-    expect(config.timeout).toBeUndefined();
   });
 
   it("loads config from yaml", async () => {
@@ -152,7 +151,6 @@ describe("Pl4nConfig", () => {
         "  id: synth",
         "  type: claude",
         "  model: opus",
-        "timeout: 120",
         "",
       ].join("\n");
       await fs.writeFile(path.join(pl4nDir, "pl4n.yaml"), yaml, "utf8");
@@ -192,7 +190,6 @@ describe("Pl4nConfig", () => {
         claude: { allowedTools: ["Read", "Write"] },
         enabled: true,
       });
-      expect(config.timeout).toBe(120);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -234,7 +231,6 @@ describe("Pl4nConfig", () => {
       expect(config.agents[0].id).toBe("opus");
       expect(config.agents[1].id).toBe("codex");
       expect(config.synthesizer.id).toBe("synthesizer");
-      expect(config.timeout).toBeUndefined();
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

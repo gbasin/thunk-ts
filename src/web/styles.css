@@ -371,7 +371,7 @@ pl4n-list {
 /* Floating undo/redo buttons */
 .undo-redo-float {
   position: fixed;
-  bottom: 24px;
+  top: 24px;
   right: 24px;
   display: flex;
   gap: 6px;
@@ -441,7 +441,7 @@ pl4n-list {
   }
 
   .undo-redo-float {
-    bottom: 16px;
+    top: 16px;
     right: 16px;
   }
 

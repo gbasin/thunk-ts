@@ -4,19 +4,14 @@ import path from "path";
 import { describe, expect, it } from "bun:test";
 
 import type { CliDeps } from "../src/cli";
-import { Phase, type Pl4nConfig } from "../src/models";
+import { type Pl4nConfig } from "../src/models";
 import { SessionManager } from "../src/session";
 
 let daemonStatus: { running: boolean; port?: number; pid?: number } = { running: false };
 let startServerCalls: Array<unknown> = [];
 let clipboardWrites: string[] = [];
-let lastTimeout: number | undefined;
 let runTurnHandler: (manager: SessionManager, sessionId: string) => Promise<boolean> = async () =>
   true;
-
-function resetLastTimeout(): void {
-  lastTimeout = undefined;
-}
 
 const cliDeps: Partial<CliDeps> = {
   isDaemonRunning: async () => daemonStatus,
@@ -27,9 +22,8 @@ const cliDeps: Partial<CliDeps> = {
   },
   TurnOrchestrator: class {
     manager: SessionManager;
-    constructor(manager: SessionManager, config: Pl4nConfig) {
+    constructor(manager: SessionManager, _config: Pl4nConfig) {
       this.manager = manager;
-      lastTimeout = config.timeout;
     }
     async runTurn(sessionId: string): Promise<boolean> {
       return await runTurnHandler(this.manager, sessionId);
@@ -116,7 +110,6 @@ describe("CLI (mocked dependencies)", () => {
       daemonStatus = { running: true, port: 9000, pid: 1 };
       clipboardWrites = [];
       startServerCalls = [];
-      resetLastTimeout();
       runTurnHandler = async () => true;
 
       const originalHost = process.env.PL4N_HOST;
@@ -157,7 +150,6 @@ describe("CLI (mocked dependencies)", () => {
       daemonStatus = { running: true };
       clipboardWrites = [];
       startServerCalls = [];
-      resetLastTimeout();
       runTurnHandler = async () => true;
 
       const logs = await runCliCommandCapture([
@@ -176,71 +168,13 @@ describe("CLI (mocked dependencies)", () => {
     });
   });
 
-  it("wait runs a drafting turn and respects timeout", async () => {
+  it("init reports errors when a turn fails", async () => {
     await withTempDir(async (root) => {
       const pl4nDir = path.join(root, ".pl4n-test");
-      const manager = new SessionManager(pl4nDir);
-      const state = await manager.createSession("Drafting wait");
-      state.phase = Phase.Drafting;
-      await manager.saveState(state);
 
       daemonStatus = { running: false };
       clipboardWrites = [];
       startServerCalls = [];
-      resetLastTimeout();
-      runTurnHandler = async (mgr, sessionId) => {
-        const updated = await mgr.loadSession(sessionId);
-        if (updated) {
-          updated.phase = Phase.UserReview;
-          await mgr.saveState(updated);
-        }
-        return true;
-      };
-
-      const originalWeb = process.env.PL4N_WEB;
-      process.env.PL4N_WEB = "0";
-
-      try {
-        const logs = await runCliCommandCapture([
-          "node",
-          "pl4n",
-          "--pl4n-dir",
-          pl4nDir,
-          "wait",
-          "--session",
-          state.sessionId,
-          "--timeout",
-          "120",
-        ]);
-
-        const data = JSON.parse(logs[0]) as { phase: string };
-        expect(data.phase).toBe(Phase.UserReview);
-        if (lastTimeout === undefined) {
-          throw new Error("Expected timeout to be set");
-        }
-        expect(lastTimeout).toBe(120);
-      } finally {
-        if (originalWeb === undefined) {
-          delete process.env.PL4N_WEB;
-        } else {
-          process.env.PL4N_WEB = originalWeb;
-        }
-      }
-    });
-  });
-
-  it("wait reports errors when a turn fails", async () => {
-    await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n-test");
-      const manager = new SessionManager(pl4nDir);
-      const state = await manager.createSession("Drafting fail");
-      state.phase = Phase.Drafting;
-      await manager.saveState(state);
-
-      daemonStatus = { running: false };
-      clipboardWrites = [];
-      startServerCalls = [];
-      resetLastTimeout();
       runTurnHandler = async () => false;
 
       const result = await runCliCommandExpectExit([
@@ -248,9 +182,8 @@ describe("CLI (mocked dependencies)", () => {
         "pl4n",
         "--pl4n-dir",
         pl4nDir,
-        "wait",
-        "--session",
-        state.sessionId,
+        "init",
+        "Failing task",
       ]);
 
       expect(result.exitCode).toBe(1);
@@ -259,18 +192,13 @@ describe("CLI (mocked dependencies)", () => {
     });
   });
 
-  it("wait reports when session disappears mid-turn", async () => {
+  it("init reports when session disappears mid-turn", async () => {
     await withTempDir(async (root) => {
       const pl4nDir = path.join(root, ".pl4n-test");
-      const manager = new SessionManager(pl4nDir);
-      const state = await manager.createSession("Drafting vanish");
-      state.phase = Phase.Drafting;
-      await manager.saveState(state);
 
       daemonStatus = { running: false };
       clipboardWrites = [];
       startServerCalls = [];
-      resetLastTimeout();
       runTurnHandler = async (mgr, sessionId) => {
         await mgr.cleanSession(sessionId);
         return true;
@@ -281,9 +209,8 @@ describe("CLI (mocked dependencies)", () => {
         "pl4n",
         "--pl4n-dir",
         pl4nDir,
-        "wait",
-        "--session",
-        state.sessionId,
+        "init",
+        "Vanishing task",
       ]);
 
       expect(result.exitCode).toBe(1);
@@ -299,7 +226,6 @@ describe("CLI (mocked dependencies)", () => {
       daemonStatus = { running: false };
       clipboardWrites = [];
       startServerCalls = [];
-      resetLastTimeout();
       runTurnHandler = async () => true;
 
       const originalHost = process.env.PL4N_HOST;

@@ -49,15 +49,12 @@ Ask the user to paste their description. Once received, write it to `.pl4n/task-
 
 Prerequisites: If `pl4n` is not found (exit code 127), run `bun install` first.
 
-1. Run pl4n init:
+1. Run pl4n init (blocks until first turn is complete):
    - For spec file: `pl4n init --file "<filepath>"`
    - For interview/paste: `pl4n init --file .pl4n/task-temp.md`
 
-2. Capture the `session_id` from the JSON output
-
-3. Run `pl4n wait --session <session_id>` to wait for agents to complete
-
-4. When complete, tell the user:
+2. The command blocks while agents work. When complete, tell the user:
+   - The `session_id` from the JSON output
    - The path to the plan file (`.pl4n/sessions/<id>/turns/001.md`)
    - They should review and edit the file
    - When done editing, use `/pl4n:continue <session_id>` to start the next turn

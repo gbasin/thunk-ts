@@ -289,7 +289,6 @@ export class CodexCLISyncAdapter extends AgentAdapter {
     prompt: string;
     outputFile: string;
     logFile: string;
-    timeout?: number;
     sessionFile?: string;
     appendLog?: boolean;
   }): Promise<[boolean, string]> {
@@ -316,9 +315,6 @@ export class CodexCLISyncAdapter extends AgentAdapter {
       stderr: "pipe",
     });
 
-    const timeoutMs = params.timeout ? params.timeout * 1000 : null;
-    let timedOut = false;
-
     const outputPromise = streamToLog({
       stdout: proc.stdout,
       stderr: proc.stderr,
@@ -326,34 +322,14 @@ export class CodexCLISyncAdapter extends AgentAdapter {
       appendLog: params.appendLog ?? false,
     });
 
-    const exitPromise = proc.exited;
-    const timeoutPromise =
-      timeoutMs === null
-        ? null
-        : new Promise<void>((_, reject) => {
-            setTimeout(() => {
-              timedOut = true;
-              proc.kill();
-              reject(new Error("Timeout expired"));
-            }, timeoutMs);
-          });
-
     try {
-      if (timeoutPromise) {
-        await Promise.race([exitPromise, timeoutPromise]);
-      } else {
-        await exitPromise;
-      }
+      await proc.exited;
     } catch {
       // handled below
     }
 
     const { stdoutText, stderrText } = await outputPromise;
     const fullOutput = stdoutText + stderrText;
-
-    if (timedOut) {
-      return [false, "Timeout expired"];
-    }
 
     const { threadId: newThreadId, finalOutput } = parseCodexOutput(stdoutText || fullOutput);
     await writeThreadId(params.sessionFile, newThreadId);

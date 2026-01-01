@@ -222,7 +222,7 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
 
   prog
     .command("init [task]")
-    .describe("Start a new planning session")
+    .describe("Start a new planning session (blocks until first turn complete)")
     .option("--file, -f <path>", "Read task description from file (use - for stdin)")
     .action(async (task: string | undefined, opts: Record<string, unknown>) => {
       const manager = new SessionManager(resolvePl4nDir(opts, globalOptions.pl4nDir));
@@ -269,15 +269,47 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
       state.phase = Phase.Drafting;
       await manager.saveState(state);
 
-      outputJson(
-        {
+      // Run first turn (blocking)
+      const orchestrator = new deps.TurnOrchestrator(manager, config);
+      const success = await orchestrator.runTurn(state.sessionId);
+
+      const updatedState = await manager.loadSession(state.sessionId);
+      if (!updatedState) {
+        exitWithError({ error: "Session disappeared during turn" }, pretty);
+      }
+
+      const paths = manager.getPaths(state.sessionId);
+      const turnFile = paths.turnFile(updatedState.turn);
+
+      if (success) {
+        const result: Record<string, unknown> = {
           session_id: state.sessionId,
-          turn: state.turn,
-          phase: state.phase,
-          hint: "call wait to block until turn complete",
-        },
-        pretty,
-      );
+          turn: updatedState.turn,
+          phase: updatedState.phase,
+          file: turnFile,
+          has_questions: await manager.hasQuestions(state.sessionId),
+          hint: "User should edit file, then call continue or approve",
+        };
+        if (Object.keys(updatedState.agentErrors).length > 0) {
+          result.agent_errors = updatedState.agentErrors;
+        }
+        if (updatedState.phase === Phase.UserReview) {
+          await attachEditUrl(result, state.sessionId, manager, deps);
+        }
+        outputJson(result, pretty);
+      } else {
+        const errorResult: Record<string, unknown> = {
+          session_id: state.sessionId,
+          turn: updatedState.turn,
+          phase: updatedState.phase,
+          error: "Turn failed",
+          hint: "Check agent logs in .pl4n/sessions/<id>/agents/",
+        };
+        if (Object.keys(updatedState.agentErrors).length > 0) {
+          errorResult.agent_errors = updatedState.agentErrors;
+        }
+        exitWithError(errorResult, pretty);
+      }
     });
 
   prog
@@ -333,115 +365,6 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
       }
       await attachEditUrl(result, sessionId, manager, deps);
       outputJson(result, pretty);
-    });
-
-  prog
-    .command("wait")
-    .describe("Block until current turn is complete")
-    .option("--session", "Session ID")
-    .option("--timeout", "Timeout in seconds")
-    .action(async (opts: Record<string, unknown>) => {
-      const manager = new SessionManager(resolvePl4nDir(opts, globalOptions.pl4nDir));
-      const pretty = resolvePretty(opts, globalOptions.pretty);
-      const sessionId = opts.session as string | undefined;
-
-      if (!sessionId) {
-        exitWithError({ error: "Missing --session" }, pretty);
-      }
-
-      const state = await loadSessionOrExit(manager, sessionId, pretty);
-
-      const paths = manager.getPaths(sessionId);
-      const turnFile = paths.turnFile(state.turn);
-
-      if (state.phase === Phase.UserReview) {
-        const result: Record<string, unknown> = {
-          turn: state.turn,
-          phase: state.phase,
-          file: turnFile,
-          has_questions: await manager.hasQuestions(sessionId),
-          hint: "User should edit file, then call continue or approve",
-        };
-        if (Object.keys(state.agentErrors).length > 0) {
-          result.agent_errors = state.agentErrors;
-        }
-        await attachEditUrl(result, sessionId, manager, deps);
-        outputJson(result, pretty);
-        return;
-      }
-
-      if (state.phase === Phase.Approved) {
-        outputJson(
-          {
-            turn: state.turn,
-            phase: state.phase,
-            file: path.join(paths.root, "PLAN.md"),
-            hint: "Planning complete",
-          },
-          pretty,
-        );
-        return;
-      }
-
-      if (
-        state.phase === Phase.Drafting ||
-        state.phase === Phase.Initializing ||
-        state.phase === Phase.PeerReview ||
-        state.phase === Phase.Synthesizing
-      ) {
-        const config = await loadSessionConfig(manager, sessionId, pretty);
-        if (opts.timeout) {
-          const timeoutValue = Number(opts.timeout as string);
-          if (!Number.isNaN(timeoutValue)) {
-            config.timeout = timeoutValue;
-          }
-        }
-        const orchestrator = new deps.TurnOrchestrator(manager, config);
-        const success = await orchestrator.runTurn(sessionId);
-
-        const updatedState = await manager.loadSession(sessionId);
-        if (!updatedState) {
-          exitWithError({ error: "Session disappeared during turn" }, pretty);
-        }
-
-        if (success) {
-          const result: Record<string, unknown> = {
-            turn: updatedState.turn,
-            phase: updatedState.phase,
-            file: turnFile,
-            has_questions: await manager.hasQuestions(sessionId),
-            hint: "User should edit file, then call continue or approve",
-          };
-          if (Object.keys(updatedState.agentErrors).length > 0) {
-            result.agent_errors = updatedState.agentErrors;
-          }
-          if (updatedState.phase === Phase.UserReview) {
-            await attachEditUrl(result, sessionId, manager, deps);
-          }
-          outputJson(result, pretty);
-        } else {
-          const errorResult: Record<string, unknown> = {
-            turn: updatedState.turn,
-            phase: updatedState.phase,
-            error: "Turn failed",
-            hint: "Check agent logs in .pl4n/sessions/<id>/agents/",
-          };
-          if (Object.keys(updatedState.agentErrors).length > 0) {
-            errorResult.agent_errors = updatedState.agentErrors;
-          }
-          exitWithError(errorResult, pretty);
-        }
-        return;
-      }
-
-      exitWithError(
-        {
-          turn: state.turn,
-          phase: state.phase,
-          error: `Unexpected phase: ${state.phase}`,
-        },
-        pretty,
-      );
     });
 
   prog
@@ -524,7 +447,7 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
 
   prog
     .command("continue")
-    .describe("User done editing, start next turn")
+    .describe("Continue to next turn (blocks until complete)")
     .option("--session", "Session ID")
     .action(async (opts: Record<string, unknown>) => {
       const manager = new SessionManager(resolvePl4nDir(opts, globalOptions.pl4nDir));
@@ -541,7 +464,7 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
         exitWithError(
           {
             error: `Cannot continue from phase ${state.phase}`,
-            hint: "Wait for user_review phase before continuing",
+            hint: "Session must be in user_review phase to continue",
           },
           pretty,
         );
@@ -551,14 +474,46 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
       state.phase = Phase.Drafting;
       await manager.saveState(state);
 
-      outputJson(
-        {
-          turn: state.turn,
-          phase: state.phase,
-          hint: "call wait to block until turn complete",
-        },
-        pretty,
-      );
+      // Run turn (blocking)
+      const config = await loadSessionConfig(manager, sessionId, pretty);
+      const orchestrator = new deps.TurnOrchestrator(manager, config);
+      const success = await orchestrator.runTurn(sessionId);
+
+      const updatedState = await manager.loadSession(sessionId);
+      if (!updatedState) {
+        exitWithError({ error: "Session disappeared during turn" }, pretty);
+      }
+
+      const paths = manager.getPaths(sessionId);
+      const turnFile = paths.turnFile(updatedState.turn);
+
+      if (success) {
+        const result: Record<string, unknown> = {
+          turn: updatedState.turn,
+          phase: updatedState.phase,
+          file: turnFile,
+          has_questions: await manager.hasQuestions(sessionId),
+          hint: "User should edit file, then call continue or approve",
+        };
+        if (Object.keys(updatedState.agentErrors).length > 0) {
+          result.agent_errors = updatedState.agentErrors;
+        }
+        if (updatedState.phase === Phase.UserReview) {
+          await attachEditUrl(result, sessionId, manager, deps);
+        }
+        outputJson(result, pretty);
+      } else {
+        const errorResult: Record<string, unknown> = {
+          turn: updatedState.turn,
+          phase: updatedState.phase,
+          error: "Turn failed",
+          hint: "Check agent logs in .pl4n/sessions/<id>/agents/",
+        };
+        if (Object.keys(updatedState.agentErrors).length > 0) {
+          errorResult.agent_errors = updatedState.agentErrors;
+        }
+        exitWithError(errorResult, pretty);
+      }
     });
 
   prog

@@ -55,9 +55,8 @@ See `README.md` for full documentation.
 
 ## Commands
 
-pl4n init "task description"        # Start planning session
-pl4n wait --session <id>            # Block until turn complete
-pl4n continue --session <id>        # Start next turn after user edits
+pl4n init "task description"        # Start planning session (blocks until complete)
+pl4n continue --session <id>        # Start next turn after user edits (blocks)
 pl4n approve --session <id>         # Lock plan as final
 pl4n status --session <id>          # Check progress
 pl4n list                           # List all sessions

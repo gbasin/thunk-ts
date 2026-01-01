@@ -47,7 +47,6 @@ export abstract class AgentAdapter {
     prompt: string;
     outputFile: string;
     logFile: string;
-    timeout?: number;
     sessionFile?: string;
     appendLog?: boolean;
   }): Promise<[boolean, string]> {
@@ -59,31 +58,10 @@ export abstract class AgentAdapter {
       sessionFile: params.sessionFile,
     });
 
-    let timedOut = false;
-    const timeoutMs = params.timeout ? params.timeout * 1000 : null;
-
-    const waitPromise = handle.process.exited;
-    const timeoutPromise =
-      timeoutMs === null
-        ? null
-        : new Promise<void>((_, reject) => {
-            setTimeout(() => {
-              timedOut = true;
-              handle.process.kill();
-              reject(new Error("Timeout expired"));
-            }, timeoutMs);
-          });
-
     try {
-      if (timeoutPromise) {
-        await Promise.race([waitPromise, timeoutPromise]);
-      } else {
-        await waitPromise;
-      }
+      await handle.process.exited;
     } catch {
-      if (timedOut) {
-        return [false, "Timeout expired"];
-      }
+      // fall through with output handling
     }
 
     try {

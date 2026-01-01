@@ -1,13 +1,26 @@
 import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
-import { describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 
 import type { CliDeps } from "../src/cli";
 import { Phase } from "../src/models";
 import { SessionManager } from "../src/session";
 
 const decoder = new TextDecoder();
+const DEFAULT_CLAUDE_STUB = [
+  "#!/usr/bin/env sh",
+  'printf \'%s\' \'{"session_id":"stub-claude","result":"# Stub Plan"}\'',
+  "",
+].join("\n");
+const DEFAULT_CODEX_STUB = [
+  "#!/usr/bin/env sh",
+  'printf \'%s\\n\' \'{"type":"item.message","role":"assistant","content":"# Stub Codex"}\'',
+  "",
+].join("\n");
+
+let originalPath: string | undefined;
+let stubRoot: string | null = null;
 
 function runCli(args: string[], cwd: string) {
   const result = Bun.spawnSync({
@@ -49,6 +62,37 @@ async function withPatchedPath(binDir: string, fn: () => Promise<void>) {
     process.env.PATH = originalPath;
   }
 }
+
+beforeAll(async () => {
+  originalPath = process.env.PATH;
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "pl4n-agent-stubs-"));
+  const binDir = path.join(root, "bin");
+  await fs.mkdir(binDir, { recursive: true });
+  await writeExecutable(path.join(binDir, "claude"), DEFAULT_CLAUDE_STUB);
+  await writeExecutable(path.join(binDir, "codex"), DEFAULT_CODEX_STUB);
+  process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ""}`;
+  stubRoot = root;
+});
+
+afterAll(async () => {
+  if (stubRoot) {
+    const binDir = path.join(stubRoot, "bin");
+    const currentPath = process.env.PATH;
+    if (currentPath !== undefined) {
+      const nextPath = currentPath
+        .split(path.delimiter)
+        .filter((entry) => entry && entry !== binDir);
+      if (nextPath.length === 0) {
+        delete process.env.PATH;
+      } else {
+        process.env.PATH = nextPath.join(path.delimiter);
+      }
+    } else if (originalPath === undefined) {
+      delete process.env.PATH;
+    }
+    await fs.rm(stubRoot, { recursive: true, force: true });
+  }
+});
 
 describe("CLI", () => {
   it("init creates a session", async () => {
@@ -189,14 +233,21 @@ describe("CLI", () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
       const pl4nDir = path.join(root, ".pl4n-test");
+      const manager = new SessionManager(pl4nDir);
+      const state = await manager.createSession("Test feature");
+      state.phase = Phase.Drafting;
+      await manager.saveState(state);
 
-      const init = runCli(["--pl4n-dir", pl4nDir, "init", "Test feature"], repoRoot);
-      const sessionId = JSON.parse(init.stdout).session_id as string;
-
-      const approve = runCli(["--pl4n-dir", pl4nDir, "approve", "--session", sessionId], repoRoot);
+      const approve = runCli(
+        ["--pl4n-dir", pl4nDir, "approve", "--session", state.sessionId],
+        repoRoot,
+      );
       expect(approve.exitCode).toBe(1);
 
-      const cont = runCli(["--pl4n-dir", pl4nDir, "continue", "--session", sessionId], repoRoot);
+      const cont = runCli(
+        ["--pl4n-dir", pl4nDir, "continue", "--session", state.sessionId],
+        repoRoot,
+      );
       expect(cont.exitCode).toBe(1);
     });
   });
@@ -218,55 +269,15 @@ describe("CLI", () => {
       expect(result.exitCode).toBe(0);
       const data = JSON.parse(result.stdout);
       expect(data.turn).toBe(2);
-      expect(data.phase).toBe(Phase.Drafting);
+      expect(data.phase).toBe(Phase.UserReview);
 
       const updated = await manager.loadSession(state.sessionId);
       expect(updated?.turn).toBe(2);
-      expect(updated?.phase).toBe(Phase.Drafting);
+      expect(updated?.phase).toBe(Phase.UserReview);
     });
   });
 
-  it("wait returns user_review details", async () => {
-    await withTempDir(async (root) => {
-      const repoRoot = path.resolve(import.meta.dir, "..");
-      const pl4nDir = path.join(root, ".pl4n-test");
-      const manager = new SessionManager(pl4nDir);
-      const state = await manager.createSession("Test feature");
-      state.phase = Phase.UserReview;
-      state.agentErrors = { codex: "error: draft failed" };
-      await manager.saveState(state);
-
-      const result = runCli(
-        ["--pl4n-dir", pl4nDir, "wait", "--session", state.sessionId],
-        repoRoot,
-      );
-      const data = JSON.parse(result.stdout);
-      expect(data.phase).toBe(Phase.UserReview);
-      expect(data.file).toBe(manager.getPaths(state.sessionId).turnFile(state.turn));
-      expect(data.agent_errors).toEqual({ codex: "error: draft failed" });
-    });
-  });
-
-  it("wait returns approved details", async () => {
-    await withTempDir(async (root) => {
-      const repoRoot = path.resolve(import.meta.dir, "..");
-      const pl4nDir = path.join(root, ".pl4n-test");
-      const manager = new SessionManager(pl4nDir);
-      const state = await manager.createSession("Test feature");
-      state.phase = Phase.Approved;
-      await manager.saveState(state);
-
-      const result = runCli(
-        ["--pl4n-dir", pl4nDir, "wait", "--session", state.sessionId],
-        repoRoot,
-      );
-      const data = JSON.parse(result.stdout);
-      expect(data.phase).toBe(Phase.Approved);
-      expect(data.file).toBe(path.join(manager.getPaths(state.sessionId).root, "PLAN.md"));
-    });
-  });
-
-  it("wait runs a drafting turn", async () => {
+  it("init runs a drafting turn", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
       const pl4nDir = path.join(root, ".pl4n-test");
@@ -290,10 +301,7 @@ process.exit(1);
       );
 
       await withPatchedPath(binDir, async () => {
-        const init = runCli(["--pl4n-dir", pl4nDir, "init", "Test feature"], repoRoot);
-        const sessionId = JSON.parse(init.stdout).session_id as string;
-
-        const result = runCli(["--pl4n-dir", pl4nDir, "wait", "--session", sessionId], repoRoot);
+        const result = runCli(["--pl4n-dir", pl4nDir, "init", "Test feature"], repoRoot);
         const data = JSON.parse(result.stdout);
 
         expect(data.phase).toBe(Phase.UserReview);
@@ -303,7 +311,7 @@ process.exit(1);
     });
   });
 
-  it("wait emits edit_url when web enabled", async () => {
+  it("status emits edit_url when web enabled", async () => {
     await withTempDir(async (root) => {
       const pl4nDir = path.join(root, ".pl4n-test");
       const manager = new SessionManager(pl4nDir);
@@ -332,7 +340,7 @@ process.exit(1);
       try {
         const { runCliCommand } = await import("../src/cli");
         await runCliCommand(
-          ["node", "pl4n", "--pl4n-dir", pl4nDir, "wait", "--session", state.sessionId],
+          ["node", "pl4n", "--pl4n-dir", pl4nDir, "status", "--session", state.sessionId],
           deps,
         );
       } finally {
@@ -351,7 +359,7 @@ process.exit(1);
     });
   });
 
-  it("wait skips edit_url when PL4N_WEB=0", async () => {
+  it("status skips edit_url when PL4N_WEB=0", async () => {
     await withTempDir(async (root) => {
       const pl4nDir = path.join(root, ".pl4n-test");
       const manager = new SessionManager(pl4nDir);
@@ -375,7 +383,7 @@ process.exit(1);
           "pl4n",
           "--pl4n-dir",
           pl4nDir,
-          "wait",
+          "status",
           "--session",
           state.sessionId,
         ]);
@@ -393,7 +401,7 @@ process.exit(1);
     });
   });
 
-  it("wait reports web_error when daemon fails", async () => {
+  it("status reports web_error when daemon fails", async () => {
     await withTempDir(async (root) => {
       const pl4nDir = path.join(root, ".pl4n-test");
       const manager = new SessionManager(pl4nDir);
@@ -418,7 +426,7 @@ process.exit(1);
       try {
         const { runCliCommand } = await import("../src/cli");
         await runCliCommand(
-          ["node", "pl4n", "--pl4n-dir", pl4nDir, "wait", "--session", state.sessionId],
+          ["node", "pl4n", "--pl4n-dir", pl4nDir, "status", "--session", state.sessionId],
           deps,
         );
       } finally {
@@ -612,7 +620,7 @@ process.exit(1);
     });
   });
 
-  it("wait reports agent errors when drafting fails", async () => {
+  it("init reports agent errors when drafting fails", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
       const pl4nDir = path.join(root, ".pl4n-test");
@@ -636,10 +644,7 @@ process.exit(1);
       );
 
       await withPatchedPath(binDir, async () => {
-        const init = runCli(["--pl4n-dir", pl4nDir, "init", "Test feature"], repoRoot);
-        const sessionId = JSON.parse(init.stdout).session_id as string;
-
-        const result = runCli(["--pl4n-dir", pl4nDir, "wait", "--session", sessionId], repoRoot);
+        const result = runCli(["--pl4n-dir", pl4nDir, "init", "Test feature"], repoRoot);
         expect(result.exitCode).toBe(1);
         const data = JSON.parse(result.stdout);
         expect(data.error).toBe("Turn failed");
@@ -651,7 +656,7 @@ process.exit(1);
     });
   });
 
-  it("wait uses session config snapshot", async () => {
+  it("init uses session config snapshot", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
       const pl4nDir = path.join(root, ".pl4n-test");
@@ -694,27 +699,9 @@ for (const line of lines) {
       );
 
       await withPatchedPath(binDir, async () => {
-        const init = runCli(["--pl4n-dir", pl4nDir, "init", "Test feature"], repoRoot);
-        const sessionId = JSON.parse(init.stdout).session_id as string;
-
-        const updatedConfig = [
-          "agents:",
-          "  - id: codex",
-          "    type: codex",
-          "    model: codex-5.2",
-          "synthesizer:",
-          "  id: synth",
-          "  type: claude",
-          "  model: opus",
-          "",
-        ].join("\n");
-        await fs.writeFile(path.join(pl4nDir, "pl4n.yaml"), updatedConfig, "utf8");
-
-        const waitResult = runCli(
-          ["--pl4n-dir", pl4nDir, "wait", "--session", sessionId],
-          repoRoot,
-        );
-        expect(waitResult.exitCode).toBe(0);
+        const initResult = runCli(["--pl4n-dir", pl4nDir, "init", "Test feature"], repoRoot);
+        expect(initResult.exitCode).toBe(0);
+        const sessionId = JSON.parse(initResult.stdout).session_id as string;
 
         const manager = new SessionManager(pl4nDir);
         const state = await manager.loadSession(sessionId);

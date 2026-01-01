@@ -56,7 +56,6 @@ describe("SessionManager", () => {
           claude: { allowedTools: ["Read"] },
           enabled: true,
         },
-        timeout: 90,
       });
 
       const state = await manager.createSession("Test task", config);
@@ -81,7 +80,6 @@ describe("SessionManager", () => {
           claude: { allowed_tools: ["Read"] },
           enabled: true,
         },
-        timeout: 90,
       });
 
       const snapshot = await manager.loadConfigSnapshot(state.sessionId);

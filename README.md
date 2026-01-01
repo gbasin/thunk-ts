@@ -22,16 +22,13 @@ bun run src/index.ts --help
 ## Quick Start
 
 ```bash
-# Start a planning session
+# Start a planning session (blocks until first turn is complete)
 bun run src/index.ts init "Add user authentication"
-
-# Wait for agents to complete first turn
-bun run src/index.ts wait --session <session_id>
 
 # Review and edit the plan
 # Edit .pl4n/sessions/<id>/turns/001.md
 
-# Continue to next turn (incorporates your edits)
+# Continue to next turn (blocks until agents complete)
 bun run src/index.ts continue --session <session_id>
 
 # Approve when satisfied
@@ -40,16 +37,16 @@ bun run src/index.ts approve --session <session_id>
 
 ## Web Editor
 
-Pl4n can launch a lightweight web editor for reviewing and editing plans. When `pl4n wait`
-returns `user_review`, it will start a local server (if needed) and include an `edit_url` in
-the JSON output.
+Pl4n can launch a lightweight web editor for reviewing and editing plans. When `init` or
+`continue` completes, the server starts (if needed) and an `edit_url` is included in the
+JSON output.
 
 ```bash
 # Default behavior: start server and emit edit_url
-bun run src/index.ts wait --session <session_id>
+bun run src/index.ts init "Add user authentication"
 
 # Disable web editor
-PL4N_WEB=0 bun run src/index.ts wait --session <session_id>
+PL4N_WEB=0 bun run src/index.ts init "Add user authentication"
 ```
 
 Manual server control:
@@ -64,7 +61,7 @@ pl4n server start --foreground  # run in foreground (dev)
 For remote access (Tailscale/VPN), override the host used in URLs:
 
 ```bash
-PL4N_HOST=100.x.x.x bun run src/index.ts wait --session <session_id>
+PL4N_HOST=100.x.x.x bun run src/index.ts init "Add user authentication"
 ```
 
 Troubleshooting:
@@ -111,10 +108,9 @@ When you edit `turns/001.md` and call `continue`, agents receive your changes as
 
 | Command | Description |
 |---------|-------------|
-| `pl4n init "task"` | Start new planning session |
-| `pl4n wait --session <id>` | Block until current turn completes |
+| `pl4n init "task"` | Start new planning session (blocks until first turn complete) |
 | `pl4n status --session <id>` | Check progress without blocking |
-| `pl4n continue --session <id>` | Start next turn after your edits |
+| `pl4n continue --session <id>` | Start next turn after your edits (blocks until complete) |
 | `pl4n approve --session <id>` | Lock plan as final |
 | `pl4n list` | List all sessions |
 | `pl4n clean --session <id>` | Remove session data |
@@ -189,10 +185,9 @@ synthesizer:
   type: claude
   model: opus
   enabled: true
-# timeout: 300
 ```
 
-If the file is missing, defaults are used. `--timeout` overrides the config.
+If the file is missing, defaults are used.
 For Codex agents, `thinking` maps to the `--thinking` CLI flag.
 Codex constraints live under `codex` (defaults) or `agents[].codex` (overrides), with keys:
 `full_auto`, `sandbox`, `approval_policy`, `dangerously_bypass`, `add_dir`, `search`, `config`, and `mcp`.

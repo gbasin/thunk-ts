@@ -76,14 +76,6 @@ function createResolvedProcess(exitCode = 0): Bun.Subprocess {
   } as unknown as Bun.Subprocess;
 }
 
-function createPendingProcess(onKill: () => void): Bun.Subprocess {
-  return {
-    exited: new Promise(() => {}),
-    exitCode: null,
-    kill: onKill,
-  } as unknown as Bun.Subprocess;
-}
-
 describe("Adapters", () => {
   it("AgentHandle reports status from exit code", () => {
     const running = new AgentHandle(
@@ -141,32 +133,6 @@ describe("Adapters", () => {
 
       expect(success).toBe(false);
       expect(output).toBe("No output produced");
-    });
-  });
-
-  it("AgentAdapter runSync times out and kills process", async () => {
-    await withTempDir(async (root) => {
-      let killed = false;
-      const adapter = new InlineAdapter((params) => {
-        const proc = createPendingProcess(() => {
-          killed = true;
-        });
-        return new AgentHandle("inline", proc, params.logFile);
-      });
-      const outputFile = path.join(root, "timeout.txt");
-      const logFile = path.join(root, "log.txt");
-
-      const [success, output] = await adapter.runSync({
-        worktree: root,
-        prompt: "test",
-        outputFile,
-        logFile,
-        timeout: 0.01,
-      });
-
-      expect(success).toBe(false);
-      expect(output).toBe("Timeout expired");
-      expect(killed).toBe(true);
     });
   });
 
@@ -1207,70 +1173,6 @@ for (const line of lines) {
 
         expect(success).toBe(true);
         expect(output).toBe("fresh output");
-      });
-    });
-  });
-
-  it("Claude adapter reports timeout", async () => {
-    await withTempDir(async (root) => {
-      const binDir = path.join(root, "bin");
-      await fs.mkdir(binDir, { recursive: true });
-
-      await writeExecutable(
-        path.join(binDir, "claude"),
-        `#!/usr/bin/env bun
-await new Promise((r) => setTimeout(r, 50));
-process.stdout.write("late output");
-`,
-      );
-
-      await withPatchedPath(binDir, async () => {
-        const adapter = new ClaudeCodeSyncAdapter({ id: "opus", type: "claude", model: "opus" });
-        const outputFile = path.join(root, "timeout.md");
-        const logFile = path.join(root, "claude.log");
-
-        const [success, output] = await adapter.runSync({
-          worktree: root,
-          prompt: "test",
-          outputFile,
-          logFile,
-          timeout: 0.01,
-        });
-
-        expect(success).toBe(false);
-        expect(output).toBe("Timeout expired");
-      });
-    });
-  });
-
-  it("Codex adapter reports timeout", async () => {
-    await withTempDir(async (root) => {
-      const binDir = path.join(root, "bin");
-      await fs.mkdir(binDir, { recursive: true });
-
-      await writeExecutable(
-        path.join(binDir, "codex"),
-        `#!/usr/bin/env bun
-await new Promise((r) => setTimeout(r, 50));
-process.stdout.write("late output");
-`,
-      );
-
-      await withPatchedPath(binDir, async () => {
-        const adapter = new CodexCLISyncAdapter({ id: "codex", type: "codex", model: "codex" });
-        const outputFile = path.join(root, "timeout.md");
-        const logFile = path.join(root, "codex.log");
-
-        const [success, output] = await adapter.runSync({
-          worktree: root,
-          prompt: "test",
-          outputFile,
-          logFile,
-          timeout: 0.01,
-        });
-
-        expect(success).toBe(false);
-        expect(output).toBe("Timeout expired");
       });
     });
   });

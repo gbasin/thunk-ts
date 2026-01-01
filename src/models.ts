@@ -54,7 +54,6 @@ export type AgentErrorMap = Record<string, string>;
 type Pl4nConfigParams = {
   agents: AgentConfig[];
   synthesizer: AgentConfig;
-  timeout?: number;
 };
 
 const DEFAULT_CLAUDE_CONFIG: ClaudeConfig = {
@@ -154,16 +153,6 @@ function optionalBoolean(value: unknown, field: string): boolean | undefined {
   }
   if (typeof value !== "boolean") {
     throw new Error(`${field} must be a boolean`);
-  }
-  return value;
-}
-
-function parseTimeout(value: unknown): number {
-  if (typeof value !== "number" || Number.isNaN(value) || !Number.isFinite(value)) {
-    throw new Error("timeout must be a finite number");
-  }
-  if (value < 0) {
-    throw new Error("timeout must be a non-negative number");
   }
   return value;
 }
@@ -367,9 +356,7 @@ function parsePl4nConfig(value: unknown): Pl4nConfigParams {
     value.synthesizer === undefined
       ? applyAgentDefaults(defaults.synthesizer, agentDefaults)
       : parseAgentConfig(value.synthesizer, "synthesizer", agentDefaults);
-  const timeout = value.timeout === undefined ? undefined : parseTimeout(value.timeout);
-
-  return { agents, synthesizer, timeout };
+  return { agents, synthesizer };
 }
 
 async function resolveConfigPath(pl4nDir: string): Promise<string | null> {
@@ -490,12 +477,10 @@ export class SessionPaths {
 export class Pl4nConfig {
   agents: AgentConfig[];
   synthesizer: AgentConfig;
-  timeout?: number;
 
   constructor(params: Pl4nConfigParams) {
     this.agents = params.agents;
     this.synthesizer = params.synthesizer;
-    this.timeout = params.timeout;
   }
 
   static default(): Pl4nConfig {
@@ -610,9 +595,6 @@ export class Pl4nConfig {
       agents: this.agents.map((agent) => serializeAgent(agent)),
       synthesizer: serializeAgent(this.synthesizer),
     };
-    if (this.timeout !== undefined) {
-      config.timeout = this.timeout;
-    }
     return config;
   }
 }

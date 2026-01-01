@@ -194,8 +194,7 @@ async function spawnContinue(sessionId: string, pl4nDir: string, spawn: SpawnLik
   const cmd = [
     "sh",
     "-c",
-    `${bun} ${entry} continue --session ${sessionArg} --pl4n-dir ${pl4nArg} && ` +
-      `${bun} ${entry} wait --session ${sessionArg} --pl4n-dir ${pl4nArg}`,
+    `${bun} ${entry} continue --session ${sessionArg} --pl4n-dir ${pl4nArg}`,
   ];
   spawn({
     cmd,

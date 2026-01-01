@@ -2,10 +2,29 @@ import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
 import { Readable } from "stream";
-import { describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 
 import { Phase, Pl4nConfig } from "../src/models";
 import { SessionManager } from "../src/session";
+
+const DEFAULT_CLAUDE_STUB = [
+  "#!/usr/bin/env sh",
+  'printf \'%s\' \'{"session_id":"stub-claude","result":"# Stub Plan"}\'',
+  "",
+].join("\n");
+const DEFAULT_CODEX_STUB = [
+  "#!/usr/bin/env sh",
+  'printf \'%s\\n\' \'{"type":"item.message","role":"assistant","content":"# Stub Codex"}\'',
+  "",
+].join("\n");
+
+let originalPath: string | undefined;
+let stubRoot: string | null = null;
+
+async function writeExecutable(filePath: string, content: string) {
+  await fs.writeFile(filePath, content, "utf8");
+  await fs.chmod(filePath, 0o755);
+}
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "pl4n-cli-core-"));
@@ -82,6 +101,37 @@ async function runCliCommandExpectExit(
   return { exitCode, output: logs.join("\n") };
 }
 
+beforeAll(async () => {
+  originalPath = process.env.PATH;
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "pl4n-agent-stubs-"));
+  const binDir = path.join(root, "bin");
+  await fs.mkdir(binDir, { recursive: true });
+  await writeExecutable(path.join(binDir, "claude"), DEFAULT_CLAUDE_STUB);
+  await writeExecutable(path.join(binDir, "codex"), DEFAULT_CODEX_STUB);
+  process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ""}`;
+  stubRoot = root;
+});
+
+afterAll(async () => {
+  if (stubRoot) {
+    const binDir = path.join(stubRoot, "bin");
+    const currentPath = process.env.PATH;
+    if (currentPath !== undefined) {
+      const nextPath = currentPath
+        .split(path.delimiter)
+        .filter((entry) => entry && entry !== binDir);
+      if (nextPath.length === 0) {
+        delete process.env.PATH;
+      } else {
+        process.env.PATH = nextPath.join(path.delimiter);
+      }
+    } else if (originalPath === undefined) {
+      delete process.env.PATH;
+    }
+    await fs.rm(stubRoot, { recursive: true, force: true });
+  }
+});
+
 describe("CLI (runCliCommand)", () => {
   it("init creates a session", async () => {
     await withTempDir(async (root) => {
@@ -99,7 +149,7 @@ describe("CLI (runCliCommand)", () => {
       const data = JSON.parse(logs[0]) as { session_id: string; turn: number; phase: string };
       expect(data.session_id).toBeDefined();
       expect(data.turn).toBe(1);
-      expect(data.phase).toBe(Phase.Drafting);
+      expect(data.phase).toBe(Phase.UserReview);
 
       const manager = new SessionManager(pl4nDir);
       const state = await manager.loadSession(data.session_id);
@@ -282,38 +332,6 @@ describe("CLI (runCliCommand)", () => {
         "--pl4n-dir",
         pl4nDir,
         "status",
-        "--session",
-        "missing-session",
-      ]);
-
-      expect(result.exitCode).toBe(1);
-      const data = JSON.parse(result.output) as { error: string };
-      expect(data.error).toContain("missing-session");
-    });
-  });
-
-  it("wait errors when --session is missing", async () => {
-    await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n-test");
-
-      const result = await runCliCommandExpectExit(["node", "pl4n", "--pl4n-dir", pl4nDir, "wait"]);
-
-      expect(result.exitCode).toBe(1);
-      const data = JSON.parse(result.output) as { error: string };
-      expect(data.error).toContain("Missing --session");
-    });
-  });
-
-  it("wait errors when session does not exist", async () => {
-    await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n-test");
-
-      const result = await runCliCommandExpectExit([
-        "node",
-        "pl4n",
-        "--pl4n-dir",
-        pl4nDir,
-        "wait",
         "--session",
         "missing-session",
       ]);
@@ -515,65 +533,6 @@ describe("CLI (runCliCommand)", () => {
     });
   });
 
-  it("wait returns user_review with agent errors", async () => {
-    await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n-test");
-      const manager = new SessionManager(pl4nDir);
-      const state = await manager.createSession("Wait errors");
-      state.phase = Phase.UserReview;
-      state.agentErrors = { codex: "failed" };
-      await manager.saveState(state);
-
-      const originalWeb = process.env.PL4N_WEB;
-      process.env.PL4N_WEB = "false";
-
-      try {
-        const logs = await runCliCommandCapture([
-          "node",
-          "pl4n",
-          "--pl4n-dir",
-          pl4nDir,
-          "wait",
-          "--session",
-          state.sessionId,
-        ]);
-
-        const data = JSON.parse(logs[0]) as { agent_errors: Record<string, string> };
-        expect(data.agent_errors).toEqual({ codex: "failed" });
-      } finally {
-        if (originalWeb === undefined) {
-          delete process.env.PL4N_WEB;
-        } else {
-          process.env.PL4N_WEB = originalWeb;
-        }
-      }
-    });
-  });
-
-  it("wait returns approved details", async () => {
-    await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n-test");
-      const manager = new SessionManager(pl4nDir);
-      const state = await manager.createSession("Wait approved");
-      state.phase = Phase.Approved;
-      await manager.saveState(state);
-
-      const logs = await runCliCommandCapture([
-        "node",
-        "pl4n",
-        "--pl4n-dir",
-        pl4nDir,
-        "wait",
-        "--session",
-        state.sessionId,
-      ]);
-
-      const data = JSON.parse(logs[0]) as { file: string; phase: string };
-      expect(data.phase).toBe(Phase.Approved);
-      expect(data.file).toBe(path.join(manager.getPaths(state.sessionId).root, "PLAN.md"));
-    });
-  });
-
   it("continue advances a user_review session", async () => {
     await withTempDir(async (root) => {
       const pl4nDir = path.join(root, ".pl4n-test");
@@ -594,11 +553,11 @@ describe("CLI (runCliCommand)", () => {
 
       const data = JSON.parse(logs[0]) as { turn: number; phase: string };
       expect(data.turn).toBe(2);
-      expect(data.phase).toBe(Phase.Drafting);
+      expect(data.phase).toBe(Phase.UserReview);
 
       const updated = await manager.loadSession(state.sessionId);
       expect(updated?.turn).toBe(2);
-      expect(updated?.phase).toBe(Phase.Drafting);
+      expect(updated?.phase).toBe(Phase.UserReview);
     });
   });
 

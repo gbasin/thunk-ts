@@ -155,7 +155,6 @@ export class TurnOrchestrator {
         prompt,
         outputFile: planFile,
         logFile: sessionLog,
-        timeout: this.config.timeout,
         sessionFile,
         appendLog: true,
       });
@@ -231,7 +230,6 @@ export class TurnOrchestrator {
         prompt,
         outputFile: planFile,
         logFile: sessionLog,
-        timeout: this.config.timeout,
         sessionFile,
         appendLog: true,
       });
@@ -353,7 +351,6 @@ export class TurnOrchestrator {
       prompt,
       outputFile: synthFile,
       logFile,
-      timeout: this.config.timeout,
       sessionFile: synthSessionFile,
       appendLog: true,
     });
