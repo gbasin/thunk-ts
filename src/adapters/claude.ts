@@ -54,6 +54,15 @@ function shouldPreferOutput(config: AgentConfig): boolean {
   return !allowedTools.some((tool) => WRITE_TOOLS.has(tool));
 }
 
+function applyThinking(config: AgentConfig, prompt: string): string {
+  // Claude Code triggers extended thinking via magic words in the prompt:
+  // "ultrathink" = 31,999 tokens, "megathink"/"think hard" = 10,000, "think" = 4,000
+  if (!config.thinking) {
+    return prompt;
+  }
+  return `${config.thinking}\n\n${prompt}`;
+}
+
 function buildCmd(
   config: AgentConfig,
   prompt: string,
@@ -144,7 +153,8 @@ export class ClaudeCodeAdapter extends AgentAdapter {
   }): AgentHandle {
     const { worktree, prompt, logFile, sessionFile } = params;
     const sessionId = readSessionIdSync(sessionFile);
-    const cmd = buildCmd(this.config, prompt, sessionId);
+    const finalPrompt = applyThinking(this.config, prompt);
+    const cmd = buildCmd(this.config, finalPrompt, sessionId);
 
     const proc = Bun.spawn({
       cmd,
@@ -173,7 +183,8 @@ export class ClaudeCodeSyncAdapter extends AgentAdapter {
   }): AgentHandle {
     const { worktree, prompt, logFile, sessionFile } = params;
     const sessionId = readSessionIdSync(sessionFile);
-    const cmd = buildCmd(this.config, prompt, sessionId, worktree);
+    const finalPrompt = applyThinking(this.config, prompt);
+    const cmd = buildCmd(this.config, finalPrompt, sessionId, worktree);
     const proc = Bun.spawn({
       cmd,
       cwd: worktree,
@@ -195,7 +206,8 @@ export class ClaudeCodeSyncAdapter extends AgentAdapter {
     appendLog?: boolean;
   }): Promise<[boolean, string]> {
     const sessionId = await readSessionId(params.sessionFile);
-    const cmd = buildCmd(this.config, params.prompt, sessionId, params.worktree);
+    const finalPrompt = applyThinking(this.config, params.prompt);
+    const cmd = buildCmd(this.config, finalPrompt, sessionId, params.worktree);
 
     const proc = Bun.spawn({
       cmd,

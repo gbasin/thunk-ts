@@ -170,6 +170,88 @@ describe("Adapters", () => {
     });
   });
 
+  it("Claude adapter prepends thinking keyword to prompt", async () => {
+    await withTempDir(async (root) => {
+      const logFile = path.join(root, "claude.log");
+      const outputFile = path.join(root, "output.md");
+
+      const adapter = new ClaudeCodeAdapter({
+        id: "claude",
+        type: "claude",
+        model: "opus",
+        thinking: "ultrathink",
+      });
+
+      const originalSpawn = Bun.spawn;
+      const bunSpawn = Bun as unknown as { spawn: (options: any) => Bun.Subprocess };
+      const prompts: string[] = [];
+      bunSpawn.spawn = (options: { cmd: string[] }) => {
+        const pIdx = options.cmd.indexOf("-p");
+        if (pIdx !== -1) {
+          prompts.push(options.cmd[pIdx + 1]);
+        }
+        return {
+          stdout: null,
+          stderr: null,
+          exited: Promise.resolve(0),
+          exitCode: 0,
+          kill: () => {},
+        } as unknown as Bun.Subprocess;
+      };
+
+      try {
+        adapter.spawn({ worktree: root, prompt: "create a plan", outputFile, logFile });
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      } finally {
+        bunSpawn.spawn = originalSpawn as unknown as (options: any) => Bun.Subprocess;
+      }
+
+      expect(prompts.length).toBe(1);
+      expect(prompts[0]).toStartWith("ultrathink\n\n");
+      expect(prompts[0]).toContain("create a plan");
+    });
+  });
+
+  it("Claude adapter does not modify prompt when thinking is not set", async () => {
+    await withTempDir(async (root) => {
+      const logFile = path.join(root, "claude.log");
+      const outputFile = path.join(root, "output.md");
+
+      const adapter = new ClaudeCodeAdapter({
+        id: "claude",
+        type: "claude",
+        model: "opus",
+      });
+
+      const originalSpawn = Bun.spawn;
+      const bunSpawn = Bun as unknown as { spawn: (options: any) => Bun.Subprocess };
+      const prompts: string[] = [];
+      bunSpawn.spawn = (options: { cmd: string[] }) => {
+        const pIdx = options.cmd.indexOf("-p");
+        if (pIdx !== -1) {
+          prompts.push(options.cmd[pIdx + 1]);
+        }
+        return {
+          stdout: null,
+          stderr: null,
+          exited: Promise.resolve(0),
+          exitCode: 0,
+          kill: () => {},
+        } as unknown as Bun.Subprocess;
+      };
+
+      try {
+        adapter.spawn({ worktree: root, prompt: "create a plan", outputFile, logFile });
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      } finally {
+        bunSpawn.spawn = originalSpawn as unknown as (options: any) => Bun.Subprocess;
+      }
+
+      expect(prompts.length).toBe(1);
+      expect(prompts[0]).toBe("create a plan");
+    });
+  });
+
   it("Claude adapters build commands and handle empty streams", async () => {
     await withTempDir(async (root) => {
       const sessionFile = path.join(root, "claude-session.txt");
