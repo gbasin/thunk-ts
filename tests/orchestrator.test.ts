@@ -418,16 +418,15 @@ process.exit(1);
             synthesize: (
               task: string,
               agentPlans: Record<string, string>,
-              paths: { agents: string },
+              paths: {
+                agents: string;
+                agentLogFile: (id: string) => string;
+                agentSessionFile: (id: string) => string;
+              },
               userDiff: string,
             ) => Promise<string>;
           }
-        ).synthesize(
-          "Test task",
-          { opus: "Plan A", codex: "Plan B" },
-          { agents: paths.agents },
-          "",
-        );
+        ).synthesize("Test task", { opus: "Plan A", codex: "Plan B" }, paths, "");
 
         expect(result).toContain("Combined from agents");
         expect(result).toContain("Plan A");
@@ -448,11 +447,15 @@ process.exit(1);
           synthesize: (
             task: string,
             agentPlans: Record<string, string>,
-            paths: { agents: string },
+            paths: {
+              agents: string;
+              agentLogFile: (id: string) => string;
+              agentSessionFile: (id: string) => string;
+            },
             userDiff: string,
           ) => Promise<string>;
         }
-      ).synthesize("Test task", { opus: "Solo plan" }, { agents: paths.agents }, "");
+      ).synthesize("Test task", { opus: "Solo plan" }, paths, "");
 
       expect(result).toBe("Solo plan");
     });

@@ -56,10 +56,10 @@ async function isPortAvailable(port: number): Promise<boolean> {
 
 export async function findAvailablePort(
   start: number,
-  options: { isAvailable?: (port: number) => Promise<boolean> } = {},
+  options: { isAvailable?: (port: number) => Promise<boolean>; maxAttempts?: number } = {},
 ): Promise<number> {
   const check = options.isAvailable ?? isPortAvailable;
-  const maxAttempts = 100;
+  const maxAttempts = options.maxAttempts ?? 1000;
   for (let offset = 0; offset < maxAttempts; offset += 1) {
     const port = start + offset;
     if (await check(port)) {

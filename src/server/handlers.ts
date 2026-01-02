@@ -29,7 +29,7 @@ type ContentPayload = {
   mtime: number;
 };
 
-type DraftPayload = {
+type AutosavePayload = {
   content: string;
 };
 
@@ -57,10 +57,10 @@ function templateReplace(template: string, replacements: Record<string, string>)
   return result;
 }
 
-function draftFilePath(turnFile: string): string {
+function autosaveFilePath(turnFile: string): string {
   const dir = path.dirname(turnFile);
   const base = path.basename(turnFile, ".md");
-  return path.join(dir, `${base}-draft.md`);
+  return path.join(dir, `${base}-autosave.md`);
 }
 
 function parseToken(req: Request): string | null {
@@ -172,8 +172,8 @@ async function persistContent(
   await fs.mkdir(path.dirname(turnFile), { recursive: true });
   await fs.writeFile(turnFile, payload.content, "utf8");
   const newStat = await fs.stat(turnFile);
-  const draftFile = draftFilePath(turnFile);
-  await fs.rm(draftFile, { force: true });
+  const autosaveFile = autosaveFilePath(turnFile);
+  await fs.rm(autosaveFile, { force: true });
   return { status: "ok", mtime: newStat.mtimeMs };
 }
 
@@ -290,14 +290,24 @@ export function createHandlers(context: HandlerContext) {
         return jsonResponse(404, { error: "content not found" });
       }
 
-      const draftFile = draftFilePath(loaded.filePath);
-      let draftContent: string | null = null;
-      let hasDraft = false;
+      const paths = context.manager.getPaths(sessionId);
+      const turnFile = paths.turnFile(session.turn);
+      const autosaveFile = autosaveFilePath(turnFile);
+      let autosaveContent: string | null = null;
+      let hasAutosave = false;
       try {
-        draftContent = await fs.readFile(draftFile, "utf8");
-        hasDraft = true;
+        autosaveContent = await fs.readFile(autosaveFile, "utf8");
+        hasAutosave = true;
       } catch {
-        draftContent = null;
+        autosaveContent = null;
+      }
+
+      const snapshotFile = turnFile.replace(/\.md$/, ".snapshot.md");
+      let snapshotContent: string | null = null;
+      try {
+        snapshotContent = await fs.readFile(snapshotFile, "utf8");
+      } catch {
+        snapshotContent = null;
       }
 
       return jsonResponse(200, {
@@ -306,8 +316,9 @@ export function createHandlers(context: HandlerContext) {
         turn: session.turn,
         phase: session.phase,
         readOnly: session.phase !== Phase.UserReview,
-        hasDraft,
-        draft: draftContent,
+        hasAutosave,
+        autosave: autosaveContent,
+        snapshot: snapshotContent,
       });
     },
 
@@ -343,7 +354,7 @@ export function createHandlers(context: HandlerContext) {
       return jsonResponse(200, { mtime: result.mtime });
     },
 
-    async handleDraft(req: Request, sessionId: string): Promise<Response> {
+    async handleAutosave(req: Request, sessionId: string): Promise<Response> {
       const token = parseToken(req);
       if (!(await validateSessionToken(sessionId, token, context.manager))) {
         return jsonResponse(401, { error: "invalid token" });
@@ -359,21 +370,21 @@ export function createHandlers(context: HandlerContext) {
 
       const paths = context.manager.getPaths(sessionId);
       const turnFile = paths.turnFile(session.turn);
-      const draftFile = draftFilePath(turnFile);
+      const autosaveFile = autosaveFilePath(turnFile);
 
       if (req.method === "DELETE") {
-        await fs.rm(draftFile, { force: true });
+        await fs.rm(autosaveFile, { force: true });
         await updateServerActivity(context.pl4nDir, now());
         return jsonResponse(200, { discarded: true });
       }
 
-      const payload = await parseJson<DraftPayload>(req);
+      const payload = await parseJson<AutosavePayload>(req);
       if (!payload || typeof payload.content !== "string") {
         return jsonResponse(400, { error: "invalid payload" });
       }
 
       await fs.mkdir(path.dirname(turnFile), { recursive: true });
-      await fs.writeFile(draftFile, payload.content, "utf8");
+      await fs.writeFile(autosaveFile, payload.content, "utf8");
       await updateServerActivity(context.pl4nDir, now());
 
       return jsonResponse(200, { saved: true });
@@ -468,12 +479,39 @@ export function createHandlers(context: HandlerContext) {
     },
 
     async handleAssets(_: Request, assetPath: string): Promise<Response> {
-      const resolved = await resolveAssetPath(assetPath);
+      const normalized = path.normalize(assetPath).replace(/^([/\\])/, "");
+      if (normalized.includes("..")) {
+        return jsonResponse(404, { error: "asset not found" });
+      }
+
+      if (normalized.endsWith(".js")) {
+        const srcRoot = path.resolve(import.meta.dir, "..", "web");
+        const sourcePath = path.join(srcRoot, normalized.replace(/\.js$/, ".ts"));
+        try {
+          await fs.access(sourcePath);
+          const result = await Bun.build({
+            entrypoints: [sourcePath],
+            target: "browser",
+            format: "esm",
+            splitting: false,
+          });
+          if (!result.success || result.outputs.length === 0) {
+            return jsonResponse(500, { error: "asset build failed" });
+          }
+          return new Response(result.outputs[0], {
+            headers: { "Content-Type": "text/javascript" },
+          });
+        } catch {
+          // Fall back to dist assets if source is missing.
+        }
+      }
+
+      const resolved = await resolveAssetPath(normalized);
       if (resolved) {
         return new Response(Bun.file(resolved));
       }
 
-      if (assetPath === "monaco.css") {
+      if (normalized === "monaco.css") {
         const monacoPath = path.resolve(
           import.meta.dir,
           "..",
@@ -491,29 +529,6 @@ export function createHandlers(context: HandlerContext) {
         } catch {
           return jsonResponse(404, { error: "asset not found" });
         }
-      }
-
-      if (assetPath.endsWith(".js")) {
-        const srcRoot = path.resolve(import.meta.dir, "..", "web");
-        const sourcePath = path.join(srcRoot, assetPath.replace(/\.js$/, ".ts"));
-        try {
-          await fs.access(sourcePath);
-        } catch {
-          return jsonResponse(404, { error: "asset not found" });
-        }
-
-        const result = await Bun.build({
-          entrypoints: [sourcePath],
-          target: "browser",
-          format: "esm",
-          splitting: false,
-        });
-        if (!result.success || result.outputs.length === 0) {
-          return jsonResponse(500, { error: "asset build failed" });
-        }
-        return new Response(result.outputs[0], {
-          headers: { "Content-Type": "text/javascript" },
-        });
       }
 
       return jsonResponse(404, { error: "asset not found" });

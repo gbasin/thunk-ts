@@ -273,8 +273,7 @@ export class TurnOrchestrator {
 
     for (const agentId of Object.keys(this.adapters)) {
       const planId = state.agentPlanIds[agentId];
-      const agentPlanFile = path.join(paths.root, `${planId}.md`);
-      await fs.writeFile(agentPlanFile, synthesis, "utf8");
+      await fs.writeFile(paths.agentPlanFile(planId), synthesis, "utf8");
     }
 
     state.phase = Phase.UserReview;
@@ -317,7 +316,11 @@ export class TurnOrchestrator {
   private async synthesize(
     task: string,
     agentPlans: Record<string, string>,
-    paths: { agents: string },
+    paths: {
+      agents: string;
+      agentLogFile: (id: string) => string;
+      agentSessionFile: (id: string) => string;
+    },
     userDiff: string,
   ): Promise<string> {
     if (Object.keys(agentPlans).length === 1) {
@@ -340,10 +343,10 @@ export class TurnOrchestrator {
       userDiff,
     });
 
-    const logFile = path.join(paths.agents, "synthesizer.log");
+    const logFile = paths.agentLogFile("synthesizer");
     await fs.mkdir(path.dirname(logFile), { recursive: true });
 
-    const synthSessionFile = path.join(paths.agents, "synthesizer", "cli_session_id.txt");
+    const synthSessionFile = paths.agentSessionFile("synthesizer");
     await fs.mkdir(path.dirname(synthSessionFile), { recursive: true });
 
     const [success, _output] = await adapter.runSync({

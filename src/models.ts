@@ -65,6 +65,9 @@ const DEFAULT_CODEX_CONFIG: CodexConfig = {
   search: true,
 };
 
+const CODEX_REASONING_EFFORTS = new Set(["none", "minimal", "low", "medium", "high", "xhigh"]);
+let warnedCodexXmax = false;
+
 function cloneClaudeConfig(config: ClaudeConfig): ClaudeConfig {
   return {
     allowedTools: config.allowedTools ? [...config.allowedTools] : undefined,
@@ -99,8 +102,8 @@ function defaultConfigParams(): Pl4nConfigParams {
       {
         id: "codex",
         type: "codex",
-        model: "codex-5.2",
-        thinking: "xmax",
+        model: "gpt-5.2-codex",
+        thinking: "xhigh",
         codex: cloneCodexConfig(DEFAULT_CODEX_CONFIG),
         enabled: true,
       },
@@ -255,6 +258,24 @@ function parseCodexConfig(value: unknown, field: string): CodexConfig {
   };
 }
 
+function normalizeCodexThinking(value: string | undefined, field: string): string | undefined {
+  if (!value) {
+    return value;
+  }
+  const normalized = value.trim();
+  if (normalized === "xmax") {
+    if (!warnedCodexXmax) {
+      console.warn(`[pl4n] ${field} "xmax" is deprecated; using "xhigh" instead.`);
+      warnedCodexXmax = true;
+    }
+    return "xhigh";
+  }
+  if (!CODEX_REASONING_EFFORTS.has(normalized)) {
+    throw new Error(`${field} must be one of ${[...CODEX_REASONING_EFFORTS].join(", ")}`);
+  }
+  return normalized;
+}
+
 type AgentDefaults = {
   claude?: ClaudeConfig;
   codex?: CodexConfig;
@@ -267,6 +288,7 @@ function parseAgentConfig(value: unknown, field: string, defaults: AgentDefaults
   const type = requireString(value.type, `${field}.type`);
   const claudeValue = value.claude;
   const codexValue = value.codex;
+  let thinking = optionalString(value.thinking, `${field}.thinking`);
   let claudeConfig =
     claudeValue === undefined ? undefined : parseClaudeConfig(claudeValue, `${field}.claude`);
   let codexConfig =
@@ -282,6 +304,7 @@ function parseAgentConfig(value: unknown, field: string, defaults: AgentDefaults
       throw new Error(`${field}.claude is not valid for codex agents`);
     }
     codexConfig = mergeCodexConfig(defaults.codex, codexConfig);
+    thinking = normalizeCodexThinking(thinking, `${field}.thinking`);
   } else if (claudeValue !== undefined || codexValue !== undefined) {
     throw new Error(`${field} cannot include claude/codex config for type ${type}`);
   }
@@ -290,7 +313,7 @@ function parseAgentConfig(value: unknown, field: string, defaults: AgentDefaults
     id: requireString(value.id, `${field}.id`),
     type,
     model: requireString(value.model, `${field}.model`),
-    thinking: optionalString(value.thinking, `${field}.thinking`),
+    thinking,
     claude: claudeConfig,
     codex: codexConfig,
     enabled: parseEnabled(value.enabled, `${field}.enabled`),
@@ -436,6 +459,7 @@ export class SessionPaths {
   state: string;
   turns: string;
   agents: string;
+  plans: string;
 
   constructor(root: string) {
     this.root = root;
@@ -443,6 +467,7 @@ export class SessionPaths {
     this.state = path.join(root, "state.yaml");
     this.turns = path.join(root, "turns");
     this.agents = path.join(root, "agents");
+    this.plans = path.join(root, "plans");
   }
 
   static fromRoot(root: string): SessionPaths {
@@ -458,15 +483,15 @@ export class SessionPaths {
   }
 
   agentPlanFile(planId: string): string {
-    return path.join(this.root, `${planId}.md`);
+    return path.join(this.plans, `${planId}.md`);
   }
 
   agentLogFile(planId: string): string {
-    return path.join(this.agents, `${planId}.log`);
+    return path.join(this.agents, planId, "agent.log");
   }
 
   agentSessionFile(planId: string): string {
-    return path.join(this.agents, planId, "cli_session_id.txt");
+    return path.join(this.agents, planId, "session.txt");
   }
 
   agentDir(planId: string): string {

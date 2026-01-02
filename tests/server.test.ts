@@ -122,6 +122,7 @@ describe("daemon", () => {
       const spawned: string[][] = [];
       const result = await startDaemon(pl4nDir, {
         port: 4567,
+        findPort: async (start) => start,
         now: () => new Date("2024-01-01T00:00:00Z"),
         spawn: (options) => {
           spawned.push(options.cmd);
@@ -321,7 +322,7 @@ describe("handlers", () => {
     });
   });
 
-  it("serves content and drafts", async () => {
+  it("serves content and autosaves", async () => {
     await withTempDir(async (root) => {
       const pl4nDir = path.join(root, ".pl4n");
       const manager = new SessionManager(pl4nDir);
@@ -332,6 +333,8 @@ describe("handlers", () => {
       const paths = manager.getPaths(state.sessionId);
       await fs.mkdir(path.dirname(paths.turnFile(state.turn)), { recursive: true });
       await fs.writeFile(paths.turnFile(state.turn), "# Plan\n", "utf8");
+      const snapshotFile = paths.turnFile(state.turn).replace(/\.md$/, ".snapshot.md");
+      await fs.writeFile(snapshotFile, "# Snapshot\n", "utf8");
       const stat = await fs.stat(paths.turnFile(state.turn));
 
       const token = state.sessionToken ?? "";
@@ -344,26 +347,28 @@ describe("handlers", () => {
       expect(contentRes.status).toBe(200);
       const content = await readJson(contentRes);
       expect(content.content).toBe("# Plan\n");
-      expect(content.hasDraft).toBe(false);
+      expect(content.hasAutosave).toBe(false);
+      expect(content.autosave).toBeNull();
+      expect(content.snapshot).toBe("# Snapshot\n");
       expect(content.mtime).toBe(stat.mtimeMs);
 
-      const draftRes = await handlers.handleDraft(
-        new Request(`http://localhost/api/draft/${state.sessionId}?t=${token}`, {
+      const autosaveRes = await handlers.handleAutosave(
+        new Request(`http://localhost/api/autosave/${state.sessionId}?t=${token}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ content: "# Draft\n" }),
         }),
         state.sessionId,
       );
-      expect(draftRes.status).toBe(200);
+      expect(autosaveRes.status).toBe(200);
 
-      const afterDraft = await handlers.handleGetContent(
+      const afterAutosave = await handlers.handleGetContent(
         new Request(`http://localhost/api/content/${state.sessionId}?t=${token}`),
         state.sessionId,
       );
-      const afterData = await readJson(afterDraft);
-      expect(afterData.hasDraft).toBe(true);
-      expect(afterData.draft).toBe("# Draft\n");
+      const afterData = await readJson(afterAutosave);
+      expect(afterData.hasAutosave).toBe(true);
+      expect(afterData.autosave).toBe("# Draft\n");
     });
   });
 
@@ -495,7 +500,7 @@ describe("handlers", () => {
     });
   });
 
-  it("rejects save and draft when session is locked", async () => {
+  it("rejects save and autosave when session is locked", async () => {
     await withTempDir(async (root) => {
       const pl4nDir = path.join(root, ".pl4n");
       const manager = new SessionManager(pl4nDir);
@@ -516,19 +521,19 @@ describe("handlers", () => {
       );
       expect(saveRes.status).toBe(423);
 
-      const draftRes = await handlers.handleDraft(
-        new Request(`http://localhost/api/draft/${state.sessionId}?t=${token}`, {
+      const autosaveRes = await handlers.handleAutosave(
+        new Request(`http://localhost/api/autosave/${state.sessionId}?t=${token}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ content: "Draft\n" }),
         }),
         state.sessionId,
       );
-      expect(draftRes.status).toBe(423);
+      expect(autosaveRes.status).toBe(423);
     });
   });
 
-  it("deletes drafts when requested", async () => {
+  it("deletes autosaves when requested", async () => {
     await withTempDir(async (root) => {
       const pl4nDir = path.join(root, ".pl4n");
       const manager = new SessionManager(pl4nDir);
@@ -539,18 +544,18 @@ describe("handlers", () => {
       const handlers = createHandlers({ pl4nDir, manager });
       const token = state.sessionToken ?? "";
 
-      const draftRes = await handlers.handleDraft(
-        new Request(`http://localhost/api/draft/${state.sessionId}?t=${token}`, {
+      const autosaveRes = await handlers.handleAutosave(
+        new Request(`http://localhost/api/autosave/${state.sessionId}?t=${token}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ content: "Draft\n" }),
         }),
         state.sessionId,
       );
-      expect(draftRes.status).toBe(200);
+      expect(autosaveRes.status).toBe(200);
 
-      const deleteRes = await handlers.handleDraft(
-        new Request(`http://localhost/api/draft/${state.sessionId}?t=${token}`, {
+      const deleteRes = await handlers.handleAutosave(
+        new Request(`http://localhost/api/autosave/${state.sessionId}?t=${token}`, {
           method: "DELETE",
         }),
         state.sessionId,
@@ -558,11 +563,11 @@ describe("handlers", () => {
       expect(deleteRes.status).toBe(200);
 
       const paths = manager.getPaths(state.sessionId);
-      const draftPath = path.join(
+      const autosavePath = path.join(
         path.dirname(paths.turnFile(state.turn)),
-        `${String(state.turn).padStart(3, "0")}-draft.md`,
+        `${String(state.turn).padStart(3, "0")}-autosave.md`,
       );
-      await expect(fs.access(draftPath)).rejects.toBeDefined();
+      await expect(fs.access(autosavePath)).rejects.toBeDefined();
     });
   });
 

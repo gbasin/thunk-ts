@@ -21,6 +21,12 @@
     "clipboardy": "^4.0.0",
     "diff": "^5.2.0",
     "js-yaml": "^4.1.0",
+    "prosemirror-commands": "^1.7.1",
+    "prosemirror-history": "^1.5.0",
+    "prosemirror-keymap": "^1.2.3",
+    "prosemirror-model": "^1.25.4",
+    "prosemirror-state": "^1.4.4",
+    "prosemirror-view": "^1.41.4",
     "sade": "^1.8.1"
   },
   "devDependencies": {
@@ -28,7 +34,6 @@
     "@types/diff": "^8.0.0",
     "@types/js-yaml": "^4.0.9",
     "lit": "^3.2.1",
-    "monaco-editor": "^0.52.0",
     "bun-types": "^1.1.25",
     "oxlint": "^0.13.0",
     "typescript": "^5.5.4"

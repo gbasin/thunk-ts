@@ -1,0 +1,1072 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <title>PlanEditor Test</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        color-scheme: light dark;
+        --font-sans: "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
+        --font-mono: "JetBrains Mono", "SFMono-Regular", "Menlo", monospace;
+        --bg: #f7f2ea;
+        --bg-deep: #efe6d6;
+        --surface: #fffaf2;
+        --surface-2: #f3e9d7;
+        --text: #1f1c16;
+        --muted: #6b6255;
+        --accent: #ff6b35;
+        --accent-2: #2c6e8f;
+        --border: #dfd2bf;
+        --shadow: 0 12px 30px rgba(45, 36, 26, 0.12);
+        --radius: 18px;
+        --radius-sm: 12px;
+        --code-bg: rgba(128, 128, 128, 0.1);
+        --diff-added-char: rgba(80, 200, 80, 0.35);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #15120f;
+          --bg-deep: #0f0d0b;
+          --surface: #1e1914;
+          --surface-2: #2a231b;
+          --text: #f4ede2;
+          --muted: #b1a99b;
+          --accent: #ff8c42;
+          --accent-2: #6bd1ff;
+          --border: #3b3227;
+          --shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+          --code-bg: rgba(255, 255, 255, 0.08);
+          --diff-added-char: rgba(80, 200, 80, 0.25);
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: var(--font-sans);
+        background: radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.6), transparent 45%),
+          radial-gradient(circle at 80% 10%, rgba(255, 218, 168, 0.65), transparent 40%),
+          linear-gradient(160deg, var(--bg), var(--bg-deep));
+        color: var(--text);
+        min-height: 100vh;
+      }
+
+      .page {
+        height: 100vh;
+        padding: 12px;
+        display: flex;
+        align-items: stretch;
+        justify-content: center;
+      }
+
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 16px;
+        width: min(1400px, 100%);
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .header {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .header h1 {
+        margin: 0;
+        font-size: 24px;
+      }
+
+      .header-meta {
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      .editor-container {
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        overflow: hidden;
+        flex: 1;
+        min-height: 200px;
+        background: var(--surface-2);
+      }
+
+      .plan-editor-host {
+        height: 100%;
+        width: 100%;
+      }
+
+      .footer {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .status {
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .button-row {
+        display: flex;
+        gap: 10px;
+      }
+
+      .button {
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--text);
+        padding: 10px 18px;
+        border-radius: 999px;
+        font-size: 14px;
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        min-height: 44px;
+      }
+
+      .button.primary {
+        background: var(--accent);
+        border-color: transparent;
+        color: #111;
+      }
+
+      .button.secondary {
+        background: transparent;
+        border-style: dashed;
+      }
+
+      .button:hover {
+        transform: translateY(-1px);
+      }
+
+      /* Floating undo/redo buttons */
+      .undo-redo-float {
+        position: fixed;
+        top: 24px;
+        right: 24px;
+        display: flex;
+        gap: 6px;
+        z-index: 40;
+      }
+
+      .undo-redo-btn {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--text);
+        font-size: 20px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      }
+
+      /* ProseMirror Plan Editor styles */
+      .plan-editor-container {
+        width: 100%;
+        height: 100%;
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      .plan-editor {
+        min-height: 100%;
+        padding: 12px;
+        font-family: var(--font-mono);
+        font-size: 15px;
+        line-height: 1.6;
+        color: var(--text);
+        background: var(--surface-2);
+        outline: none;
+      }
+
+      .plan-editor p {
+        margin: 0 0 1em 0;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+
+      .plan-editor .code-block {
+        margin: 0.5em 0;
+        padding: 12px;
+        background: var(--code-bg);
+        border-radius: 4px;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+
+      .plan-editor .code-block code {
+        font-family: inherit;
+      }
+
+      .plan-editor .diagram-wrapper {
+        margin: 0.5em 0;
+        position: relative;
+      }
+
+      .plan-editor .diagram-block {
+        margin: 0;
+        padding: 12px;
+        background: var(--code-bg);
+        border-radius: 4px;
+        white-space: pre;
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        max-width: 100%;
+      }
+
+      .plan-editor .diagram-block code {
+        font-family: inherit;
+        display: block;
+        min-width: min-content;
+      }
+
+      .diagram-expand-btn {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        width: 40px;
+        height: 40px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        font-size: 18px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0.9;
+        z-index: 10;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      }
+
+      .plan-editor ::selection {
+        background: rgba(0, 100, 255, 0.3);
+      }
+
+      .ProseMirror-focused {
+        outline: none;
+      }
+
+      .diff-added {
+        background: var(--diff-added-char);
+        border-radius: 2px;
+      }
+
+      /* Full-screen diagram viewer */
+      .diagram-viewer-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.9);
+        z-index: 100;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.2s, visibility 0.2s;
+      }
+
+      .diagram-viewer-backdrop.open {
+        opacity: 1;
+        visibility: visible;
+      }
+
+      .diagram-viewer-container {
+        width: 100%;
+        height: 100%;
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+        background: var(--surface);
+        border-radius: 8px;
+        touch-action: pan-x pan-y pinch-zoom;
+      }
+
+      .diagram-viewer-content {
+        padding: 16px;
+        font-family: var(--font-mono);
+        font-size: 16px;
+        line-height: 1.5;
+        white-space: pre;
+        color: var(--text);
+        margin: 0;
+        min-width: min-content;
+        transform-origin: 0 0;
+        transition: transform 0.1s ease-out;
+      }
+
+      .diagram-viewer-close {
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        width: 44px;
+        height: 44px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 50%;
+        font-size: 24px;
+        cursor: pointer;
+        z-index: 101;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text);
+      }
+
+      .diagram-viewer-zoom {
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 8px;
+        z-index: 101;
+      }
+
+      .diagram-viewer-zoom button {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        font-size: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        cursor: pointer;
+        color: var(--text);
+      }
+
+      .diagram-viewer-zoom-label {
+        display: flex;
+        align-items: center;
+        padding: 0 12px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        font-size: 14px;
+        min-width: 60px;
+        justify-content: center;
+        color: var(--text);
+      }
+
+      /* Diff viewer modal */
+      .diff-viewer-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(10, 8, 6, 0.8);
+        z-index: 100;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.2s, visibility 0.2s;
+      }
+
+      .diff-viewer-backdrop.open {
+        opacity: 1;
+        visibility: visible;
+      }
+
+      .diff-viewer-container {
+        width: 100%;
+        max-width: 800px;
+        max-height: 80vh;
+        background: var(--surface);
+        border-radius: var(--radius);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        border: 1px solid var(--border);
+      }
+
+      .diff-viewer-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .diff-viewer-header h2 {
+        margin: 0;
+        font-size: 16px;
+      }
+
+      .diff-viewer-close {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        font-size: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: transparent;
+        border: 1px solid var(--border);
+        cursor: pointer;
+        color: var(--text);
+      }
+
+      .diff-viewer-content {
+        flex: 1;
+        overflow: auto;
+        padding: 12px;
+        font-family: var(--font-mono);
+        font-size: 14px;
+        line-height: 1.5;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      .diff-line-add {
+        white-space: pre-wrap;
+        word-break: break-all;
+        padding: 2px 4px;
+        border-radius: 2px;
+        margin: 1px 0;
+        background: rgba(80, 180, 80, 0.25);
+      }
+
+      .diff-line-remove {
+        white-space: pre-wrap;
+        word-break: break-all;
+        padding: 2px 4px;
+        border-radius: 2px;
+        margin: 1px 0;
+        background: rgba(220, 80, 80, 0.25);
+        text-decoration: line-through;
+        opacity: 0.8;
+      }
+
+      .diff-line-context {
+        white-space: pre-wrap;
+        word-break: break-all;
+        padding: 2px 4px;
+        margin: 1px 0;
+        opacity: 0.6;
+      }
+
+      .diff-no-changes {
+        text-align: center;
+        padding: 40px;
+        opacity: 0.6;
+      }
+
+      @media (max-width: 720px) {
+        .page {
+          padding: 6px;
+        }
+
+        .card {
+          padding: 10px;
+          border-radius: 12px;
+        }
+
+        .header h1 {
+          font-size: 20px;
+        }
+
+        .undo-redo-float {
+          top: 16px;
+          right: 16px;
+        }
+
+        .undo-redo-btn {
+          width: 40px;
+          height: 40px;
+          font-size: 18px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="card">
+        <div class="header">
+          <div>
+            <h1>test-session</h1>
+            <div class="header-meta">Turn 1 - user review</div>
+          </div>
+        </div>
+
+        <div class="editor-container">
+          <div id="editor" class="plan-editor-host"></div>
+        </div>
+
+        <div class="footer">
+          <div class="status" id="status">Ready</div>
+          <div class="button-row">
+            <button class="button secondary" id="showDiffBtn">Show Diff</button>
+            <button class="button" id="setBaselineBtn">Set Baseline</button>
+            <button class="button primary" id="getValueBtn">Get Markdown</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="undo-redo-float">
+      <button class="undo-redo-btn" id="undoBtn" title="Undo (Cmd+Z)">↶</button>
+      <button class="undo-redo-btn" id="redoBtn" title="Redo (Cmd+Shift+Z)">↷</button>
+    </div>
+
+    <script type="module">
+      import { EditorState, Plugin } from "https://esm.sh/prosemirror-state@1.4.4";
+      import { EditorView, Decoration, DecorationSet } from "https://esm.sh/prosemirror-view@1.41.4";
+      import { Schema } from "https://esm.sh/prosemirror-model@1.25.4";
+      import { keymap } from "https://esm.sh/prosemirror-keymap@1.2.3";
+      import { baseKeymap } from "https://esm.sh/prosemirror-commands@1.7.1";
+      import { history, undo, redo } from "https://esm.sh/prosemirror-history@1.5.0";
+      import * as Diff from "https://esm.sh/diff@5.2.0";
+
+      // Box-drawing characters for diagram detection
+      const DIAGRAM_CHARS = /[─│┌┐└┘├┤┬┴┼╭╮╰╯║═╔╗╚╝╠╣╦╩╬▶◀▲▼→←↑↓┃┏┓┗┛┣┫┳┻╋]/;
+
+      function isDiagram(content) {
+        return DIAGRAM_CHARS.test(content);
+      }
+
+      // Schema
+      const schema = new Schema({
+        nodes: {
+          doc: { content: "block+" },
+          paragraph: {
+            content: "text*",
+            group: "block",
+            parseDOM: [{ tag: "p" }],
+            toDOM() { return ["p", 0]; }
+          },
+          code_block: {
+            content: "text*",
+            group: "block",
+            code: true,
+            defining: true,
+            attrs: { language: { default: "" } },
+            parseDOM: [{ tag: "pre", preserveWhitespace: "full" }],
+            toDOM(node) {
+              return ["pre", { class: "code-block" }, ["code", 0]];
+            }
+          },
+          diagram: {
+            content: "text*",
+            group: "block",
+            code: true,
+            defining: true,
+            atom: true,
+            parseDOM: [{ tag: "pre.diagram-block", preserveWhitespace: "full" }],
+            toDOM() {
+              return ["pre", { class: "diagram-block" }, ["code", 0]];
+            }
+          },
+          text: { group: "inline" }
+        }
+      });
+
+      // Parse markdown
+      function parseMarkdown(text) {
+        const blocks = [];
+        const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/g;
+        let lastIndex = 0;
+        let match;
+
+        while ((match = codeBlockRegex.exec(text)) !== null) {
+          const before = text.slice(lastIndex, match.index);
+          if (before.trim()) {
+            const paragraphs = before.split(/\n\n+/);
+            for (const p of paragraphs) {
+              if (p.trim()) {
+                blocks.push({ type: "paragraph", content: p.trim() });
+              }
+            }
+          }
+
+          const language = match[1];
+          const content = match[2];
+
+          if (isDiagram(content)) {
+            blocks.push({ type: "diagram", content });
+          } else {
+            blocks.push({ type: "code_block", content, language });
+          }
+
+          lastIndex = match.index + match[0].length;
+        }
+
+        const after = text.slice(lastIndex);
+        if (after.trim()) {
+          const paragraphs = after.split(/\n\n+/);
+          for (const p of paragraphs) {
+            if (p.trim()) {
+              blocks.push({ type: "paragraph", content: p.trim() });
+            }
+          }
+        }
+
+        if (blocks.length === 0) {
+          blocks.push({ type: "paragraph", content: "" });
+        }
+
+        const docNodes = blocks.map(block => {
+          if (block.type === "paragraph") {
+            return schema.nodes.paragraph.create(null, block.content ? schema.text(block.content) : null);
+          } else if (block.type === "diagram") {
+            return schema.nodes.diagram.create(null, block.content ? schema.text(block.content) : null);
+          } else {
+            return schema.nodes.code_block.create(
+              { language: block.language || "" },
+              block.content ? schema.text(block.content) : null
+            );
+          }
+        });
+
+        return schema.node("doc", null, docNodes);
+      }
+
+      // Serialize to markdown
+      function serializeMarkdown(doc) {
+        const parts = [];
+
+        doc.forEach(node => {
+          if (node.type.name === "paragraph") {
+            parts.push(node.textContent);
+            parts.push("");
+          } else if (node.type.name === "code_block") {
+            const lang = node.attrs.language || "";
+            parts.push("```" + lang);
+            parts.push(node.textContent);
+            parts.push("```");
+            parts.push("");
+          } else if (node.type.name === "diagram") {
+            parts.push("```");
+            parts.push(node.textContent);
+            parts.push("```");
+            parts.push("");
+          }
+        });
+
+        while (parts.length > 0 && parts[parts.length - 1] === "") {
+          parts.pop();
+        }
+
+        return parts.join("\n");
+      }
+
+      // Diff highlighting
+      let baselineDoc = null;
+
+      function extractTextWithPositions(doc) {
+        const text = [];
+        const positions = [];
+
+        doc.descendants((node, pos) => {
+          if (node.isText) {
+            for (let i = 0; i < node.text.length; i++) {
+              text.push(node.text[i]);
+              positions.push(pos + i);
+            }
+          }
+          return true;
+        });
+
+        return { text: text.join(""), positions };
+      }
+
+      function createDiffDecorations(doc, baseline) {
+        if (!baseline) return DecorationSet.empty;
+
+        const current = extractTextWithPositions(doc);
+        const base = extractTextWithPositions(baseline);
+
+        if (current.text === base.text) return DecorationSet.empty;
+
+        const decorations = [];
+        const changes = Diff.diffChars(base.text, current.text);
+
+        let currentIdx = 0;
+
+        for (const change of changes) {
+          const len = change.value.length;
+
+          if (change.added) {
+            const startPos = current.positions[currentIdx];
+            const endPos = current.positions[currentIdx + len - 1];
+
+            if (startPos !== undefined && endPos !== undefined) {
+              decorations.push(
+                Decoration.inline(startPos, endPos + 1, { class: "diff-added" })
+              );
+            }
+            currentIdx += len;
+          } else if (!change.removed) {
+            currentIdx += len;
+          }
+        }
+
+        return DecorationSet.create(doc, decorations);
+      }
+
+      function diffPlugin() {
+        return new Plugin({
+          state: {
+            init(_, state) {
+              return createDiffDecorations(state.doc, baselineDoc);
+            },
+            apply(tr, oldDecorations, oldState, newState) {
+              return createDiffDecorations(newState.doc, baselineDoc);
+            }
+          },
+          props: {
+            decorations(state) {
+              return this.getState(state);
+            }
+          }
+        });
+      }
+
+      // Diagram viewer
+      const diagramViewer = document.createElement("div");
+      diagramViewer.className = "diagram-viewer-backdrop";
+      diagramViewer.innerHTML = `
+        <div class="diagram-viewer-container" id="diagramViewerContainer">
+          <pre class="diagram-viewer-content" id="diagramViewerContent"></pre>
+        </div>
+        <button class="diagram-viewer-close" id="diagramViewerClose">×</button>
+        <div class="diagram-viewer-zoom">
+          <button id="zoomOut">−</button>
+          <div class="diagram-viewer-zoom-label" id="zoomLabel">100%</div>
+          <button id="zoomIn">+</button>
+        </div>
+      `;
+      document.body.appendChild(diagramViewer);
+
+      const diagramViewerContent = diagramViewer.querySelector("#diagramViewerContent");
+      const diagramViewerContainer = diagramViewer.querySelector("#diagramViewerContainer");
+      let currentZoom = 100;
+
+      function openDiagramViewer(content) {
+        diagramViewerContent.textContent = content;
+        currentZoom = 100;
+        updateZoom();
+        diagramViewer.classList.add("open");
+        document.body.style.overflow = "hidden";
+      }
+
+      function closeDiagramViewer() {
+        diagramViewer.classList.remove("open");
+        document.body.style.overflow = "";
+      }
+
+      function updateZoom() {
+        diagramViewerContent.style.transform = `scale(${currentZoom / 100})`;
+        diagramViewer.querySelector("#zoomLabel").textContent = `${currentZoom}%`;
+      }
+
+      diagramViewer.querySelector("#diagramViewerClose").addEventListener("click", closeDiagramViewer);
+      diagramViewer.addEventListener("click", (e) => {
+        if (e.target === diagramViewer) closeDiagramViewer();
+      });
+      diagramViewer.querySelector("#zoomIn").addEventListener("click", () => {
+        currentZoom = Math.min(300, currentZoom + 25);
+        updateZoom();
+      });
+      diagramViewer.querySelector("#zoomOut").addEventListener("click", () => {
+        currentZoom = Math.max(25, currentZoom - 25);
+        updateZoom();
+      });
+
+      // Pinch to zoom
+      let initialPinchDistance = 0;
+      let initialPinchZoom = 100;
+
+      function getTouchDistance(touches) {
+        if (touches.length < 2) return 0;
+        const dx = touches[0].clientX - touches[1].clientX;
+        const dy = touches[0].clientY - touches[1].clientY;
+        return Math.sqrt(dx * dx + dy * dy);
+      }
+
+      diagramViewerContainer.addEventListener("touchstart", (e) => {
+        if (e.touches.length === 2) {
+          initialPinchDistance = getTouchDistance(e.touches);
+          initialPinchZoom = currentZoom;
+        }
+      }, { passive: true });
+
+      diagramViewerContainer.addEventListener("touchmove", (e) => {
+        if (e.touches.length === 2 && initialPinchDistance > 0) {
+          e.preventDefault();
+          const dist = getTouchDistance(e.touches);
+          const scale = dist / initialPinchDistance;
+          currentZoom = Math.max(25, Math.min(300, Math.round(initialPinchZoom * scale)));
+          updateZoom();
+        }
+      }, { passive: false });
+
+      diagramViewerContainer.addEventListener("touchend", () => {
+        initialPinchDistance = 0;
+      }, { passive: true });
+
+      // Diff viewer
+      const diffViewer = document.createElement("div");
+      diffViewer.className = "diff-viewer-backdrop";
+      diffViewer.innerHTML = `
+        <div class="diff-viewer-container">
+          <div class="diff-viewer-header">
+            <h2>Changes</h2>
+            <button class="diff-viewer-close" id="diffViewerClose">×</button>
+          </div>
+          <div class="diff-viewer-content" id="diffViewerContent"></div>
+        </div>
+      `;
+      document.body.appendChild(diffViewer);
+
+      const diffViewerContent = diffViewer.querySelector("#diffViewerContent");
+
+      function escapeHtml(text) {
+        return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      }
+
+      function openDiffViewer() {
+        if (!baselineDoc) {
+          diffViewerContent.innerHTML = '<div class="diff-no-changes">No baseline set</div>';
+        } else {
+          const baseText = serializeMarkdown(baselineDoc);
+          const currentText = serializeMarkdown(view.state.doc);
+
+          if (baseText === currentText) {
+            diffViewerContent.innerHTML = '<div class="diff-no-changes">No changes</div>';
+          } else {
+            const changes = Diff.diffLines(baseText, currentText);
+            let html = '';
+
+            for (const change of changes) {
+              const lines = change.value.split('\n');
+              for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                if (i === lines.length - 1 && line === '') continue;
+
+                if (change.added) {
+                  html += `<div class="diff-line-add">+ ${escapeHtml(line)}</div>`;
+                } else if (change.removed) {
+                  html += `<div class="diff-line-remove">- ${escapeHtml(line)}</div>`;
+                } else {
+                  html += `<div class="diff-line-context">  ${escapeHtml(line)}</div>`;
+                }
+              }
+            }
+
+            diffViewerContent.innerHTML = html;
+          }
+        }
+
+        diffViewer.classList.add("open");
+        document.body.style.overflow = "hidden";
+      }
+
+      function closeDiffViewer() {
+        diffViewer.classList.remove("open");
+        document.body.style.overflow = "";
+      }
+
+      diffViewer.querySelector("#diffViewerClose").addEventListener("click", closeDiffViewer);
+      diffViewer.addEventListener("click", (e) => {
+        if (e.target === diffViewer) closeDiffViewer();
+      });
+
+      // Escape key closes modals
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          if (diagramViewer.classList.contains("open")) closeDiagramViewer();
+          if (diffViewer.classList.contains("open")) closeDiffViewer();
+        }
+      });
+
+      // Diagram NodeView
+      class DiagramNodeView {
+        constructor(node) {
+          this.dom = document.createElement("div");
+          this.dom.className = "diagram-wrapper";
+          this.dom.contentEditable = "false";
+
+          const expandBtn = document.createElement("button");
+          expandBtn.className = "diagram-expand-btn";
+          expandBtn.textContent = "⤢";
+          expandBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            openDiagramViewer(node.textContent);
+          });
+
+          const pre = document.createElement("pre");
+          pre.className = "diagram-block";
+
+          const code = document.createElement("code");
+          code.textContent = node.textContent;
+
+          pre.appendChild(code);
+          this.dom.appendChild(expandBtn);
+          this.dom.appendChild(pre);
+          this.contentDOM = null;
+          this._content = node.textContent;
+        }
+
+        stopEvent() { return false; }
+        ignoreMutation() { return true; }
+
+        update(node) {
+          if (node.type.name !== "diagram") return false;
+          const code = this.dom.querySelector("code");
+          if (code) code.textContent = node.textContent;
+          this._content = node.textContent;
+          return true;
+        }
+      }
+
+      // Sample content
+      const sampleContent = `# Implementation Plan
+
+## Overview
+This is a test document to verify the PlanEditor component works correctly.
+
+## Architecture
+
+\`\`\`
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│   Client    │───▶│   Server    │───▶│  Database   │
+│  (React)    │    │  (Node.js)  │    │ (Postgres)  │
+└─────────────┘    └─────────────┘    └─────────────┘
+       │                  │
+       │                  ▼
+       │           ┌─────────────┐
+       └──────────▶│   Cache     │
+                   │  (Redis)    │
+                   └─────────────┘
+\`\`\`
+
+## Tasks
+1. First task - implement the feature
+2. Second task - write tests
+3. Third task - update documentation
+
+## Code Example
+
+\`\`\`typescript
+function hello() {
+  console.log("Hello, world!");
+}
+\`\`\`
+
+## Data Flow
+
+\`\`\`
+User Request
+     │
+     ▼
+┌────────────────────────────────────────────────────┐
+│                    API Gateway                      │
+├────────────────────────────────────────────────────┤
+│  ┌──────────┐  ┌──────────┐  ┌──────────────────┐  │
+│  │   Auth   │  │  Rate    │  │    Validation    │  │
+│  │Middleware│─▶│ Limiter  │─▶│    Middleware    │  │
+│  └──────────┘  └──────────┘  └──────────────────┘  │
+└────────────────────────────────────────────────────┘
+                       │
+                       ▼
+              ┌──────────────┐
+              │   Handler    │
+              └──────────────┘
+\`\`\`
+
+## Notes
+- The editor supports iOS autocomplete
+- ASCII diagrams scroll horizontally on mobile
+- Tap the ⤢ button to view diagrams full-screen
+- Character-level diff highlighting shows additions in green
+- Click "Show Diff" to see all changes including deletions
+
+Try editing this text to see the diff highlighting in action!`;
+
+      // Initialize editor
+      const wrapper = document.getElementById("editor");
+      const status = document.getElementById("status");
+
+      const doc = parseMarkdown(sampleContent);
+      baselineDoc = doc;
+
+      const state = EditorState.create({
+        doc,
+        plugins: [
+          history(),
+          keymap({ "Mod-z": undo, "Mod-Shift-z": redo, "Mod-y": redo }),
+          keymap(baseKeymap),
+          diffPlugin()
+        ]
+      });
+
+      const view = new EditorView(wrapper, {
+        state,
+        nodeViews: {
+          diagram: (node) => new DiagramNodeView(node)
+        },
+        attributes: {
+          class: "plan-editor",
+          spellcheck: "true"
+        },
+        dispatchTransaction(tr) {
+          const newState = view.state.apply(tr);
+          view.updateState(newState);
+          if (tr.docChanged) {
+            status.textContent = "Unsaved changes";
+          }
+        }
+      });
+
+      // Controls
+      document.getElementById("getValueBtn").addEventListener("click", () => {
+        const markdown = serializeMarkdown(view.state.doc);
+        console.log(markdown);
+        alert("Markdown logged to console");
+        status.textContent = "Markdown exported";
+      });
+
+      document.getElementById("undoBtn").addEventListener("click", () => {
+        undo(view.state, view.dispatch);
+      });
+
+      document.getElementById("redoBtn").addEventListener("click", () => {
+        redo(view.state, view.dispatch);
+      });
+
+      document.getElementById("setBaselineBtn").addEventListener("click", () => {
+        baselineDoc = view.state.doc;
+        view.dispatch(view.state.tr);
+        status.textContent = "Baseline set to current content";
+      });
+
+      document.getElementById("showDiffBtn").addEventListener("click", openDiffViewer);
+    </script>
+  </body>
+</html>

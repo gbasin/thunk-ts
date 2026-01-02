@@ -128,7 +128,8 @@ export async function startDaemon(
   options: StartOptions = {},
 ): Promise<{ pid: number; port: number }> {
   const spawn = options.spawn ?? Bun.spawn;
-  const port = options.port ?? (await (options.findPort ?? findAvailablePort)(DEFAULT_PORT));
+  const portStart = options.port ?? DEFAULT_PORT;
+  const port = await (options.findPort ?? findAvailablePort)(portStart);
   const cmd = await resolveDaemonCommand(pl4nDir, port, options);
   const env = { ...process.env, ...options.env, PL4N_DIR: pl4nDir, PL4N_PORT: String(port) };
   const logFile = options.logFile ?? path.join(pl4nDir, "server.log");

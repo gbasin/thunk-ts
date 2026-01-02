@@ -82,8 +82,9 @@ src/
 .pl4n/sessions/swift-river/      # Human-friendly session ID
 ├── meta.yaml                     # Task description, timestamp
 ├── state.yaml                    # Turn, phase, agent_plan_ids mapping
-├── sunny-glade.md                # Agent's persistent plan (plan_id)
-├── amber-marsh.md                # Another agent's plan
+├── plans/                        # Agent plan files
+│   ├── sunny-glade.md            # Agent's persistent plan (plan_id)
+│   └── amber-marsh.md            # Another agent's plan
 ├── turns/
 │   ├── 001.md                    # Turn 1 synthesis (user edits this)
 │   ├── 001.snapshot.md           # Pre-edit snapshot (for diffing)
@@ -91,10 +92,14 @@ src/
 │   │   ├── sunny-glade-draft.md
 │   │   └── sunny-glade-reviewed.md
 │   └── ...
-├── agents/
-│   ├── sunny-glade.log           # Session-wide debug log (appended)
+├── agents/                       # Agent runtime data
 │   ├── sunny-glade/
-│   │   └── cli_session_id.txt    # For --resume
-│   ├── amber-marsh.log
-│   └── synthesizer.log
+│   │   ├── agent.log             # Session-wide debug log (appended)
+│   │   └── session.txt           # CLI session ID for --resume
+│   ├── amber-marsh/
+│   │   ├── agent.log
+│   │   └── session.txt
+│   └── synthesizer/
+│       ├── agent.log
+│       └── session.txt
 └── PLAN.md                       # Symlink to approved turn

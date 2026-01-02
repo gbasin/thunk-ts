@@ -23,6 +23,7 @@ export class SessionManager {
     await fs.mkdir(paths.root, { recursive: true });
     await fs.mkdir(paths.turns, { recursive: true });
     await fs.mkdir(paths.agents, { recursive: true });
+    await fs.mkdir(paths.plans, { recursive: true });
 
     const state = new SessionState({
       sessionId,

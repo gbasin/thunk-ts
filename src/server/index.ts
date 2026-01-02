@@ -118,7 +118,7 @@ export async function startServer(opts?: Partial<ServerStart>): Promise<void> {
         return await handlers.handleSave(req, sessionId);
       }
 
-      if (pathname.startsWith("/api/draft/")) {
+      if (pathname.startsWith("/api/autosave/")) {
         if (req.method !== "POST" && req.method !== "DELETE") {
           return new Response("Method Not Allowed", { status: 405 });
         }
@@ -126,7 +126,7 @@ export async function startServer(opts?: Partial<ServerStart>): Promise<void> {
         if (!sessionId) {
           return new Response("Not Found", { status: 404 });
         }
-        return await handlers.handleDraft(req, sessionId);
+        return await handlers.handleAutosave(req, sessionId);
       }
 
       if (pathname.startsWith("/api/continue/")) {

@@ -105,21 +105,21 @@ describe("server index", () => {
         );
         expect(saveRes.status).toBe(423);
 
-        const draftMethod = await handler(
-          new Request(`${base}/api/draft/${state.sessionId}?t=${sessionToken}`, {
+        const autosaveMethod = await handler(
+          new Request(`${base}/api/autosave/${state.sessionId}?t=${sessionToken}`, {
             method: "PUT",
           }),
         );
-        expect(draftMethod.status).toBe(405);
+        expect(autosaveMethod.status).toBe(405);
 
-        const draftRes = await handler(
-          new Request(`${base}/api/draft/${state.sessionId}?t=${sessionToken}`, {
+        const autosaveRes = await handler(
+          new Request(`${base}/api/autosave/${state.sessionId}?t=${sessionToken}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ content: "Draft\n" }),
           }),
         );
-        expect(draftRes.status).toBe(423);
+        expect(autosaveRes.status).toBe(423);
 
         const continueMethod = await handler(
           new Request(`${base}/api/continue/${state.sessionId}?t=${sessionToken}`),

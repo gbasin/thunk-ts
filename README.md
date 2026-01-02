@@ -66,7 +66,7 @@ PL4N_HOST=100.x.x.x bun run src/index.ts init "Add user authentication"
 
 Troubleshooting:
 - If the browser cannot connect, check local firewall settings and that the port is reachable.
-- If port 3456 is taken, the server will try the next available port.
+- If port 3456 (or `PL4N_PORT`) is taken, the server will try the next available port.
 - Clipboard copy is best-effort; the URL is always printed in JSON output.
 
 ## How It Works
@@ -133,6 +133,7 @@ When you edit `turns/001.md` and call `continue`, agents receive your changes as
         ├── turns/
         │   ├── 001.md                # Turn 1 synthesis (USER EDITS THIS)
         │   ├── 001.snapshot.md       # Pre-edit snapshot (for diffing)
+        │   ├── 001-autosave.md       # Web editor autosave (cleared on save/continue)
         │   ├── 001/                  # Debug snapshots
         │   │   ├── sunny-glade-draft.md
         │   │   └── sunny-glade-reviewed.md
@@ -177,8 +178,8 @@ agents:
     enabled: true
   - id: codex
     type: codex
-    model: codex-5.2
-    thinking: xmax
+    model: gpt-5.2-codex
+    thinking: xhigh
     enabled: true
 synthesizer:
   id: synthesizer
@@ -188,7 +189,7 @@ synthesizer:
 ```
 
 If the file is missing, defaults are used.
-For Codex agents, `thinking` maps to the `--thinking` CLI flag.
+For Codex agents, `thinking` maps to `model_reasoning_effort` (valid values: none, minimal, low, medium, high, xhigh).
 Codex constraints live under `codex` (defaults) or `agents[].codex` (overrides), with keys:
 `full_auto`, `sandbox`, `approval_policy`, `dangerously_bypass`, `add_dir`, `search`, `config`, and `mcp`.
 `config` and `mcp` are serialized to JSON and passed via `--config`.

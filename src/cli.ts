@@ -26,6 +26,7 @@ export type CliDeps = {
   startDaemon: typeof startDaemon;
   stopDaemon: typeof stopDaemon;
   startServer: typeof startServer;
+  findAvailablePort: typeof findAvailablePort;
   writeClipboard: (text: string) => Promise<void>;
 };
 
@@ -126,6 +127,7 @@ const defaultDeps: CliDeps = {
   startDaemon,
   stopDaemon,
   startServer,
+  findAvailablePort,
   writeClipboard: copyToClipboard,
 };
 
@@ -383,7 +385,8 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
           if (running.running) {
             exitWithError({ error: "Server already running" }, pretty);
           }
-          const port = portOverride ?? (await findAvailablePort(3456));
+          const portStart = portOverride ?? 3456;
+          const port = await deps.findAvailablePort(portStart);
           const token = await ensureGlobalToken(manager.pl4nDir);
           const url = `http://${getLocalIP()}:${port}/list?t=${token}`;
           outputJson({ running: true, foreground: true, port, url }, pretty);

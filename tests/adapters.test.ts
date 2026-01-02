@@ -377,8 +377,8 @@ describe("Adapters", () => {
       const adapter = new CodexCLIAdapter({
         id: "codex",
         type: "codex",
-        model: "codex-5.2",
-        thinking: "xmax",
+        model: "gpt-5.2-codex",
+        thinking: "xhigh",
         codex: {
           fullAuto: false,
           sandbox: "read-only",
@@ -390,8 +390,8 @@ describe("Adapters", () => {
       const syncAdapter = new CodexCLISyncAdapter({
         id: "codex-sync",
         type: "codex",
-        model: "codex-5.2",
-        thinking: "xmax",
+        model: "gpt-5.2-codex",
+        thinking: "xhigh",
         codex: {
           fullAuto: false,
           sandbox: "read-only",
@@ -439,9 +439,9 @@ describe("Adapters", () => {
       expect(commands[0]).toContain("untrusted");
       expect(commands[0]).toContain("extra-dir");
       expect(commands[0]).toContain("--model");
-      expect(commands[0]).toContain("codex-5.2");
+      expect(commands[0]).toContain("gpt-5.2-codex");
       expect(commands[0]).toContain("-c");
-      expect(commands[0]).toContain("model_reasoning_effort=xmax");
+      expect(commands[0]).toContain("model_reasoning_effort=xhigh");
       expect(commands[0]).not.toContain("--full-auto");
       expect(commands[0]).toContain("resume");
       expect(commands[0]).toContain("thread-123");
@@ -454,14 +454,14 @@ describe("Adapters", () => {
       expect(commands[1]).toContain("untrusted");
       expect(commands[1]).toContain("extra-dir");
       expect(commands[1]).toContain("--model");
-      expect(commands[1]).toContain("codex-5.2");
+      expect(commands[1]).toContain("gpt-5.2-codex");
       expect(commands[1]).toContain("-c");
-      expect(commands[1]).toContain("model_reasoning_effort=xmax");
+      expect(commands[1]).toContain("model_reasoning_effort=xhigh");
       expect(commands[1]).not.toContain("--full-auto");
       expect(commands[1]).toContain("resume");
       expect(commands[1]).toContain("thread-123");
-      expect(adapter.getName()).toBe("Codex CLI (codex-5.2)");
-      expect(syncAdapter.getName()).toBe("Codex CLI Sync (codex-5.2)");
+      expect(adapter.getName()).toBe("Codex CLI (gpt-5.2-codex)");
+      expect(syncAdapter.getName()).toBe("Codex CLI Sync (gpt-5.2-codex)");
       expect(await fs.readFile(logFile, "utf8")).toBe("");
       expect(await fs.readFile(logFileSync, "utf8")).toBe("");
     });
@@ -475,7 +475,7 @@ describe("Adapters", () => {
       const adapter = new CodexCLIAdapter({
         id: "codex",
         type: "codex",
-        model: "codex-5.2",
+        model: "gpt-5.2-codex",
         codex: { mcp: { servers: [{ name: "test", command: ["npx", "server"] }] } },
       });
 
@@ -553,7 +553,7 @@ for (const line of lines) {
         const adapter = new CodexCLISyncAdapter({
           id: "codex",
           type: "codex",
-          model: "codex-5.2",
+          model: "gpt-5.2-codex",
           codex: {
             mcp: { servers: [{ name: "test", command: ["npx", "server"] }] },
           },
@@ -590,13 +590,13 @@ for (const line of lines) {
       const adapter = new CodexCLIAdapter({
         id: "codex",
         type: "codex",
-        model: "codex-5.2",
+        model: "gpt-5.2-codex",
         codex: { mcp: { servers: [{ name: "test", command: ["npx", "server"] }] } },
       });
       const syncAdapter = new CodexCLISyncAdapter({
         id: "codex-sync",
         type: "codex",
-        model: "codex-5.2",
+        model: "gpt-5.2-codex",
         codex: { mcp: { servers: [{ name: "test", command: ["npx", "server"] }] } },
       });
 
@@ -639,7 +639,7 @@ for (const line of lines) {
       const adapter = new CodexCLIAdapter({
         id: "codex",
         type: "codex",
-        model: "codex-5.2",
+        model: "gpt-5.2-codex",
         codex: { config: { mcp: { servers: [] } }, mcp: { servers: [] } },
       });
       const logFile = path.join(root, "codex.log");
@@ -713,7 +713,7 @@ for (const line of lines) {
         const adapter = new CodexCLISyncAdapter({
           id: "codex",
           type: "codex",
-          model: "codex-5.2",
+          model: "gpt-5.2-codex",
           codex: { sandbox: "read-only" },
         });
         const outputFile = path.join(root, "plan.md");
@@ -741,7 +741,7 @@ for (const line of lines) {
       const adapter = new CodexCLISyncAdapter({
         id: "codex",
         type: "codex",
-        model: "codex-5.2",
+        model: "gpt-5.2-codex",
         codex: { dangerouslyBypass: true },
       });
       const outputFile = path.join(root, "plan.md");

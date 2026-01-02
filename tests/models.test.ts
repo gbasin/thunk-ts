@@ -83,10 +83,13 @@ describe("SessionPaths", () => {
 
     expect(paths.turnFile(1)).toBe(path.join(root, "turns", "001.md"));
     expect(paths.turnSnapshotDir(10)).toBe(path.join(root, "turns", "010"));
-    expect(paths.agentPlanFile("sunny-glade")).toBe(path.join(root, "sunny-glade.md"));
-    expect(paths.agentLogFile("sunny-glade")).toBe(path.join(root, "agents", "sunny-glade.log"));
+    expect(paths.plans).toBe(path.join(root, "plans"));
+    expect(paths.agentPlanFile("sunny-glade")).toBe(path.join(root, "plans", "sunny-glade.md"));
+    expect(paths.agentLogFile("sunny-glade")).toBe(
+      path.join(root, "agents", "sunny-glade", "agent.log"),
+    );
     expect(paths.agentSessionFile("sunny-glade")).toBe(
-      path.join(root, "agents", "sunny-glade", "cli_session_id.txt"),
+      path.join(root, "agents", "sunny-glade", "session.txt"),
     );
     expect(paths.agentDir("sunny-glade")).toBe(path.join(root, "agents", "sunny-glade"));
   });
@@ -99,8 +102,8 @@ describe("Pl4nConfig", () => {
     expect(config.agents[0].id).toBe("opus");
     expect(config.agents[0].claude?.allowedTools).toContain("Read");
     expect(config.agents[1].id).toBe("codex");
-    expect(config.agents[1].model).toBe("codex-5.2");
-    expect(config.agents[1].thinking).toBe("xmax");
+    expect(config.agents[1].model).toBe("gpt-5.2-codex");
+    expect(config.agents[1].thinking).toBe("xhigh");
     expect(config.agents[1].codex?.sandbox).toBeUndefined();
     expect(config.agents[1].codex?.approvalPolicy).toBeUndefined();
     expect(config.agents[1].codex?.fullAuto).toBe(true);
@@ -144,8 +147,8 @@ describe("Pl4nConfig", () => {
         "        - Read",
         "  - id: beta",
         "    type: codex",
-        "    model: codex-5.2",
-        "    thinking: xmax",
+        "    model: gpt-5.2-codex",
+        "    thinking: xhigh",
         "    enabled: false",
         "synthesizer:",
         "  id: synth",
@@ -167,8 +170,8 @@ describe("Pl4nConfig", () => {
       expect(config.agents[1]).toEqual({
         id: "beta",
         type: "codex",
-        model: "codex-5.2",
-        thinking: "xmax",
+        model: "gpt-5.2-codex",
+        thinking: "xhigh",
         codex: {
           fullAuto: false,
           sandbox: "read-only",
@@ -191,6 +194,37 @@ describe("Pl4nConfig", () => {
         enabled: true,
       });
     } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("maps legacy codex xmax thinking to xhigh", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pl4n-config-"));
+    const pl4nDir = path.join(root, ".pl4n");
+    const originalWarn = console.warn;
+    const warnings: string[] = [];
+    console.warn = (message?: unknown) => {
+      if (typeof message === "string") {
+        warnings.push(message);
+      }
+    };
+    try {
+      await fs.mkdir(pl4nDir, { recursive: true });
+      const yaml = [
+        "agents:",
+        "  - id: codex",
+        "    type: codex",
+        "    model: gpt-5.2-codex",
+        "    thinking: xmax",
+        "",
+      ].join("\n");
+      await fs.writeFile(path.join(pl4nDir, "pl4n.yaml"), yaml, "utf8");
+      const config = await Pl4nConfig.loadFromPl4nDir(pl4nDir);
+      const codexAgent = config.agents.find((agent) => agent.type === "codex");
+      expect(codexAgent?.thinking).toBe("xhigh");
+      expect(warnings.length).toBe(1);
+    } finally {
+      console.warn = originalWarn;
       await fs.rm(root, { recursive: true, force: true });
     }
   });
@@ -231,6 +265,33 @@ describe("Pl4nConfig", () => {
       expect(config.agents[0].id).toBe("opus");
       expect(config.agents[1].id).toBe("codex");
       expect(config.synthesizer.id).toBe("synthesizer");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects invalid codex thinking values", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pl4n-config-"));
+    const pl4nDir = path.join(root, ".pl4n");
+    try {
+      await fs.mkdir(pl4nDir, { recursive: true });
+      const yaml = [
+        "agents:",
+        "  - id: codex",
+        "    type: codex",
+        "    model: gpt-5.2-codex",
+        "    thinking: ultrathink",
+        "",
+      ].join("\n");
+      await fs.writeFile(path.join(pl4nDir, "pl4n.yaml"), yaml, "utf8");
+      let error: Error | undefined;
+      try {
+        await Pl4nConfig.loadFromPl4nDir(pl4nDir);
+      } catch (err) {
+        error = err as Error;
+      }
+      expect(error).toBeDefined();
+      expect(error?.message).toContain("thinking");
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

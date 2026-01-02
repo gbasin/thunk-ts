@@ -22,15 +22,6 @@ async function main(): Promise<void> {
   const root = path.resolve(import.meta.dir, "..", "..");
   const srcDir = path.join(root, "src", "web");
   const distDir = path.join(root, "dist", "web");
-  const monacoCss = path.join(
-    root,
-    "node_modules",
-    "monaco-editor",
-    "min",
-    "vs",
-    "editor",
-    "editor.main.css",
-  );
 
   await fs.mkdir(distDir, { recursive: true });
 
@@ -40,7 +31,6 @@ async function main(): Promise<void> {
   await copyFile(srcDir, distDir, "index.html");
   await copyFile(srcDir, distDir, "list.html");
   await copyFile(srcDir, distDir, "styles.css");
-  await fs.copyFile(monacoCss, path.join(distDir, "monaco.css"));
 }
 
 await main();

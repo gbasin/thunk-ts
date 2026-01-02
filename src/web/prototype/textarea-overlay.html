@@ -1,0 +1,698 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <title>Textarea Overlay Prototype</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      :root {
+        --font-size: 16px;
+        --line-height: 1.5;
+        --padding: 12px;
+        --font-family: ui-monospace, "SF Mono", Menlo, Monaco, "Cascadia Code", monospace;
+        --bg: #fff;
+        --fg: #1a1a1a;
+        --border: #ccc;
+        --added-bg: rgba(80, 180, 80, 0.2);
+        --added-char: rgba(80, 200, 80, 0.4);
+        --modified-bg: rgba(255, 180, 50, 0.15);
+        --modified-char: rgba(255, 200, 80, 0.45);
+        --deleted-marker: rgba(220, 80, 80, 0.6);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1e1e1e;
+          --fg: #d4d4d4;
+          --border: #444;
+          --added-bg: rgba(80, 180, 80, 0.12);
+          --added-char: rgba(80, 200, 80, 0.3);
+          --modified-bg: rgba(255, 180, 50, 0.1);
+          --modified-char: rgba(255, 200, 80, 0.35);
+        }
+      }
+
+      body {
+        margin: 0;
+        padding: 20px;
+        font-family: system-ui, -apple-system, sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+      }
+
+      h1 {
+        font-size: 1.25rem;
+        margin: 0 0 8px 0;
+      }
+
+      .description {
+        font-size: 0.875rem;
+        color: #666;
+        margin-bottom: 16px;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        .description {
+          color: #999;
+        }
+      }
+
+      .editor-container {
+        position: relative;
+        width: 100%;
+        max-width: 800px;
+        height: 400px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        overflow: hidden;
+      }
+
+      /* The highlight layer - sits ABOVE the textarea for expand buttons */
+      .highlight-layer {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        overflow: hidden; /* Clip the transformed content */
+        pointer-events: none;
+        z-index: 10;
+      }
+
+      /* Background layer for text visibility */
+      .bg-layer {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: var(--bg);
+        z-index: 0;
+      }
+
+      /* Inner container that gets transformed - must match textarea exactly */
+      .highlight-content {
+        padding: var(--padding);
+        font-family: var(--font-family);
+        font-size: var(--font-size);
+        line-height: var(--line-height);
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        color: var(--fg); /* Show the text here since textarea is transparent */
+        will-change: transform;
+      }
+
+      /* The actual textarea - transparent text, visible caret */
+      .editor-textarea {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        padding: var(--padding);
+        font-family: var(--font-family);
+        font-size: var(--font-size);
+        line-height: var(--line-height);
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        overflow-y: auto;
+        /* Sync scroll on iOS more smoothly */
+        -webkit-overflow-scrolling: touch;
+        border: none;
+        outline: none;
+        resize: none;
+        background: transparent;
+        /* Make text transparent - highlight layer shows the actual text */
+        color: transparent;
+        -webkit-text-fill-color: transparent;
+        /* But keep the caret visible */
+        caret-color: var(--fg);
+        /* Between bg and highlight layer */
+        z-index: 5;
+      }
+
+      /* Highlight marks */
+      .line-added {
+        background: var(--added-bg);
+        display: block;
+      }
+
+      .line-modified {
+        background: var(--modified-bg);
+        display: block;
+      }
+
+      .char-added {
+        background: var(--added-char);
+        border-radius: 2px;
+      }
+
+      .char-modified {
+        background: var(--modified-char);
+        border-radius: 2px;
+      }
+
+      .line-deleted-marker::before {
+        content: "";
+        display: block;
+        height: 2px;
+        background: var(--deleted-marker);
+        margin: -1px 0;
+      }
+
+      /* Status bar */
+      .status-bar {
+        margin-top: 12px;
+        padding: 8px 12px;
+        background: var(--border);
+        border-radius: 4px;
+        font-size: 0.875rem;
+        font-family: var(--font-family);
+      }
+
+      /* Controls */
+      .controls {
+        margin-top: 16px;
+        display: flex;
+        gap: 8px;
+      }
+
+      button {
+        padding: 8px 16px;
+        font-size: 0.875rem;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: var(--bg);
+        color: var(--fg);
+        cursor: pointer;
+      }
+
+      button:hover {
+        background: var(--border);
+      }
+
+      /* Original content display */
+      .original-section {
+        margin-top: 24px;
+      }
+
+      .original-section h2 {
+        font-size: 1rem;
+        margin: 0 0 8px 0;
+      }
+
+      .original-content {
+        padding: var(--padding);
+        font-family: var(--font-family);
+        font-size: var(--font-size);
+        line-height: var(--line-height);
+        white-space: pre-wrap;
+        background: var(--border);
+        border-radius: 6px;
+        opacity: 0.7;
+      }
+
+      /* Code block styling in highlight layer */
+      .code-block-wrapper {
+        position: relative;
+        display: block;
+        background: rgba(128, 128, 128, 0.1);
+        border-radius: 4px;
+        margin: 4px 0;
+        /* pointer-events stays none - only button is tappable */
+      }
+
+      .code-block-content {
+        display: block;
+        white-space: pre;
+        overflow: hidden;
+      }
+
+      .code-block-expand {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        width: 44px;
+        height: 44px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        cursor: pointer;
+        pointer-events: auto;
+        opacity: 0.95;
+        transition: opacity 0.15s, transform 0.15s;
+        z-index: 20; /* Above highlight layer */
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        -webkit-tap-highlight-color: rgba(0,0,0,0.1);
+      }
+
+      .code-block-expand:hover {
+        opacity: 1;
+        transform: scale(1.1);
+      }
+
+      .code-block-expand:active {
+        transform: scale(0.95);
+      }
+
+      /* Full-screen code viewer modal */
+      .code-viewer-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.85);
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.2s, visibility 0.2s;
+      }
+
+      .code-viewer-backdrop.open {
+        opacity: 1;
+        visibility: visible;
+      }
+
+      .code-viewer-container {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        max-width: 100%;
+        max-height: 100%;
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+        background: var(--bg);
+        border-radius: 8px;
+        touch-action: pan-x pan-y pinch-zoom;
+      }
+
+      .code-viewer-content {
+        padding: 16px;
+        font-family: var(--font-family);
+        font-size: var(--font-size);
+        line-height: var(--line-height);
+        white-space: pre;
+        color: var(--fg);
+        min-width: min-content;
+        transform-origin: 0 0;
+        transition: transform 0.1s ease-out;
+      }
+
+      .code-viewer-close {
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        width: 44px;
+        height: 44px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 50%;
+        font-size: 24px;
+        cursor: pointer;
+        z-index: 1001;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .code-viewer-zoom-controls {
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 8px;
+        z-index: 1001;
+      }
+
+      .code-viewer-zoom-controls button {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        font-size: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .code-viewer-zoom-label {
+        display: flex;
+        align-items: center;
+        padding: 0 12px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        font-size: 14px;
+        min-width: 60px;
+        justify-content: center;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Textarea + Overlay Prototype</h1>
+    <p class="description">
+      Testing character-level diff highlighting with native iOS autocomplete support.
+      Edit the text below and see changes highlighted in real-time.
+    </p>
+
+    <div class="editor-container">
+      <div class="bg-layer"></div>
+      <textarea class="editor-textarea" id="editor" spellcheck="true" autocomplete="on" autocorrect="on" autocapitalize="on"></textarea>
+      <div class="highlight-layer" id="highlightLayer">
+        <div class="highlight-content" id="highlights"></div>
+      </div>
+    </div>
+
+    <div class="status-bar" id="status">Ready</div>
+
+    <div class="controls">
+      <button id="resetBtn">Reset to Original</button>
+      <button id="newBaseBtn">Set Current as Baseline</button>
+    </div>
+
+    <div class="original-section">
+      <h2>Original (baseline for diff)</h2>
+      <div class="original-content" id="original"></div>
+    </div>
+
+    <!-- Code viewer modal -->
+    <div class="code-viewer-backdrop" id="codeViewer">
+      <div class="code-viewer-container" id="codeViewerContainer">
+        <div class="code-viewer-content" id="codeViewerContent"></div>
+      </div>
+      <button class="code-viewer-close" id="codeViewerClose">×</button>
+      <div class="code-viewer-zoom-controls">
+        <button id="zoomOut">−</button>
+        <div class="code-viewer-zoom-label" id="zoomLabel">100%</div>
+        <button id="zoomIn">+</button>
+      </div>
+    </div>
+
+    <script type="module">
+      import * as Diff from "https://esm.sh/diff@5.2.0";
+
+      const editor = document.getElementById("editor");
+      const highlights = document.getElementById("highlights");
+      const status = document.getElementById("status");
+      const originalDisplay = document.getElementById("original");
+      const resetBtn = document.getElementById("resetBtn");
+      const newBaseBtn = document.getElementById("newBaseBtn");
+
+      // Sample markdown content with ASCII diagrams
+      const sampleContent = `# Implementation Plan
+
+## Architecture
+
+\`\`\`
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│   Client    │───▶│   Server    │───▶│  Database   │
+│  (React)    │    │  (Node.js)  │    │ (Postgres)  │
+└─────────────┘    └─────────────┘    └─────────────┘
+       │                  │
+       │                  ▼
+       │           ┌─────────────┐
+       └──────────▶│   Cache     │
+                   │  (Redis)    │
+                   └─────────────┘
+\`\`\`
+
+## Phase 1: Setup
+
+- Initialize the project structure
+- Configure TypeScript and build tools
+- Set up testing framework
+
+## Data Flow
+
+\`\`\`
+User Request
+     │
+     ▼
+┌────────────────────────────────────────────────────┐
+│                    API Gateway                      │
+├────────────────────────────────────────────────────┤
+│  ┌──────────┐  ┌──────────┐  ┌──────────────────┐  │
+│  │   Auth   │  │  Rate    │  │    Validation    │  │
+│  │Middleware│─▶│ Limiter  │─▶│    Middleware    │  │
+│  └──────────┘  └──────────┘  └──────────────────┘  │
+└────────────────────────────────────────────────────┘
+                       │
+                       ▼
+              ┌──────────────┐
+              │   Handler    │
+              └──────────────┘
+\`\`\`
+
+## Phase 2: Core Features
+
+1. Implement user authentication
+2. Build the API endpoints
+3. Create the database schema
+
+## Notes
+
+This plan is subject to change based on feedback.
+`;
+
+      let baselineContent = sampleContent;
+
+      function init() {
+        editor.value = sampleContent;
+        originalDisplay.textContent = sampleContent;
+        updateHighlights();
+      }
+
+      function escapeHtml(text) {
+        return text
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+
+      // Store code blocks for expand functionality
+      let codeBlocks = [];
+
+      // Parse markdown and extract code blocks with their positions
+      function parseCodeBlocks(text) {
+        const blocks = [];
+        const regex = /```(\w*)\n([\s\S]*?)```/g;
+        let match;
+        while ((match = regex.exec(text)) !== null) {
+          blocks.push({
+            start: match.index,
+            end: match.index + match[0].length,
+            lang: match[1],
+            content: match[2],
+            fullMatch: match[0]
+          });
+        }
+        return blocks;
+      }
+
+      // Render text with code blocks wrapped
+      function renderWithCodeBlocks(text, diffClass = "") {
+        const blocks = parseCodeBlocks(text);
+        if (blocks.length === 0) {
+          return diffClass ? `<span class="${diffClass}">${escapeHtml(text)}</span>` : escapeHtml(text);
+        }
+
+        let result = "";
+        let lastEnd = 0;
+
+        blocks.forEach((block, idx) => {
+          // Text before this code block
+          const before = text.slice(lastEnd, block.start);
+          if (before) {
+            result += diffClass ? `<span class="${diffClass}">${escapeHtml(before)}</span>` : escapeHtml(before);
+          }
+
+          // The code block itself
+          const blockIdx = codeBlocks.length;
+          codeBlocks.push(block.content);
+
+          result += `<span class="code-block-wrapper ${diffClass}">`;
+          result += `<span class="code-block-expand" data-block="${blockIdx}">⤢</span>`;
+          result += `<span class="code-block-content">${escapeHtml(block.fullMatch)}</span>`;
+          result += `</span>`;
+
+          lastEnd = block.end;
+        });
+
+        // Text after last code block
+        const after = text.slice(lastEnd);
+        if (after) {
+          result += diffClass ? `<span class="${diffClass}">${escapeHtml(after)}</span>` : escapeHtml(after);
+        }
+
+        return result;
+      }
+
+      function updateHighlights() {
+        const currentContent = editor.value;
+        const lineChanges = Diff.diffLines(baselineContent, currentContent);
+
+        // Reset code blocks array
+        codeBlocks = [];
+
+        let html = "";
+        let i = 0;
+
+        while (i < lineChanges.length) {
+          const change = lineChanges[i];
+
+          if (change.removed && lineChanges[i + 1]?.added) {
+            // Modification: do char-level diff
+            const removed = change;
+            const added = lineChanges[i + 1];
+
+            const charChanges = Diff.diffChars(removed.value, added.value);
+            let lineHtml = "";
+
+            for (const charChange of charChanges) {
+              if (charChange.added) {
+                lineHtml += `<span class="char-added">${escapeHtml(charChange.value)}</span>`;
+              } else if (!charChange.removed) {
+                lineHtml += escapeHtml(charChange.value);
+              }
+              // removed chars are simply omitted from display
+            }
+
+            // Wrap in modified line span
+            html += `<span class="line-modified">${lineHtml}</span>`;
+            i += 2;
+          } else if (change.added) {
+            // Pure addition - check for code blocks
+            html += renderWithCodeBlocks(change.value, "line-added");
+            i++;
+          } else if (change.removed) {
+            // Pure deletion - show marker
+            html += `<span class="line-deleted-marker"></span>`;
+            i++;
+          } else {
+            // Unchanged - check for code blocks
+            html += renderWithCodeBlocks(change.value);
+            i++;
+          }
+        }
+
+        highlights.innerHTML = html;
+
+        // Count changes for status
+        const addedLines = lineChanges.filter((c) => c.added).length;
+        const removedLines = lineChanges.filter((c) => c.removed).length;
+        const modifiedPairs = lineChanges.filter(
+          (c, idx) => c.removed && lineChanges[idx + 1]?.added
+        ).length;
+
+        if (addedLines === 0 && removedLines === 0) {
+          status.textContent = "No changes";
+        } else {
+          status.textContent = `Changes: +${addedLines - modifiedPairs} lines, -${removedLines - modifiedPairs} lines, ~${modifiedPairs} modified`;
+        }
+      }
+
+      // Code viewer functionality
+      const codeViewer = document.getElementById("codeViewer");
+      const codeViewerContent = document.getElementById("codeViewerContent");
+      const codeViewerClose = document.getElementById("codeViewerClose");
+      const zoomIn = document.getElementById("zoomIn");
+      const zoomOut = document.getElementById("zoomOut");
+      const zoomLabel = document.getElementById("zoomLabel");
+
+      let currentZoom = 100;
+      const ZOOM_STEP = 25;
+      const ZOOM_MIN = 25;
+      const ZOOM_MAX = 200;
+
+      function openCodeViewer(content) {
+        codeViewerContent.textContent = content;
+        currentZoom = 100;
+        updateZoom();
+        codeViewer.classList.add("open");
+        document.body.style.overflow = "hidden";
+      }
+
+      function closeCodeViewer() {
+        codeViewer.classList.remove("open");
+        document.body.style.overflow = "";
+      }
+
+      function updateZoom() {
+        codeViewerContent.style.transform = `scale(${currentZoom / 100})`;
+        zoomLabel.textContent = `${currentZoom}%`;
+      }
+
+      // Event listeners for code viewer
+      codeViewerClose.addEventListener("click", closeCodeViewer);
+      codeViewer.addEventListener("click", (e) => {
+        if (e.target === codeViewer) closeCodeViewer();
+      });
+
+      zoomIn.addEventListener("click", () => {
+        currentZoom = Math.min(ZOOM_MAX, currentZoom + ZOOM_STEP);
+        updateZoom();
+      });
+
+      zoomOut.addEventListener("click", () => {
+        currentZoom = Math.max(ZOOM_MIN, currentZoom - ZOOM_STEP);
+        updateZoom();
+      });
+
+      // Close on Escape
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && codeViewer.classList.contains("open")) {
+          closeCodeViewer();
+        }
+      });
+
+      // Handle clicks on expand buttons (event delegation)
+      highlights.addEventListener("click", (e) => {
+        const expandBtn = e.target.closest(".code-block-expand");
+        if (expandBtn) {
+          const blockIdx = parseInt(expandBtn.dataset.block, 10);
+          if (codeBlocks[blockIdx] !== undefined) {
+            openCodeViewer(codeBlocks[blockIdx]);
+          }
+        }
+      });
+
+      // Use transform for smoother scroll sync (GPU accelerated)
+      let rafId = null;
+      function syncScroll() {
+        if (rafId) return; // Already scheduled
+        rafId = requestAnimationFrame(() => {
+          rafId = null;
+          const scrollTop = editor.scrollTop;
+          const scrollLeft = editor.scrollLeft;
+          highlights.style.transform = `translate(${-scrollLeft}px, ${-scrollTop}px)`;
+        });
+      }
+
+      editor.addEventListener("input", updateHighlights);
+      editor.addEventListener("scroll", syncScroll, { passive: true });
+
+      resetBtn.addEventListener("click", () => {
+        editor.value = baselineContent;
+        updateHighlights();
+      });
+
+      newBaseBtn.addEventListener("click", () => {
+        baselineContent = editor.value;
+        originalDisplay.textContent = baselineContent;
+        updateHighlights();
+      });
+
+      init();
+    </script>
+  </body>
+</html>

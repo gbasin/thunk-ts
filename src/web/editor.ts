@@ -1,28 +1,8 @@
 import { LitElement, html } from "lit";
 import * as Diff from "diff";
-import * as monaco from "monaco-editor/esm/vs/editor/editor.api";
+import { PlanEditor } from "./plan-editor.js";
 
 type Change = Diff.Change;
-import "monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution";
-
-function ensureMonacoWorkers(): void {
-  const globalScope = window as typeof window & {
-    MonacoEnvironment?: { getWorker: () => Worker };
-  };
-  if (globalScope.MonacoEnvironment) {
-    return;
-  }
-  globalScope.MonacoEnvironment = {
-    getWorker: () =>
-      ({
-        postMessage() {},
-        terminate() {},
-        addEventListener() {},
-        removeEventListener() {},
-        onmessage: null,
-      }) as unknown as Worker,
-  };
-}
 
 function formatPhase(phase: string): string {
   return phase.replace(/_/g, " ");
@@ -47,26 +27,19 @@ class Pl4nEditor extends LitElement {
   declare phase: string;
   declare readOnly: boolean;
 
-  private editor: monaco.editor.IStandaloneCodeEditor | null = null;
+  private editor: PlanEditor | null = null;
   private mtime = 0;
   private dirty = false;
   private saving = false;
   private continuing = false;
   private statusMessage = "Loading plan...";
-  private draftTimer: number | null = null;
+  private autosaveTimer: number | null = null;
   private pollTimer: number | null = null;
-  private draftContent: string | null = null;
-  private hasDraft = false;
-  private showDiff = false;
+  private autosaveContent: string | null = null;
+  private hasAutosave = false;
+  private showAutosaveDiff = false;
   private lastLoadedContent = "";
-  private suppressChange = false;
-  private decorationIds: string[] = [];
-
-  // Undo/redo history
-  private undoStack: Array<{ text: string; selectionStart: number; selectionEnd: number }> = [];
-  private redoStack: Array<{ text: string; selectionStart: number; selectionEnd: number }> = [];
-  private historyTimer: number | null = null;
-  private lastHistoryText = "";
+  private snapshotContent: string | null = null;
 
   createRenderRoot() {
     return this;
@@ -86,63 +59,25 @@ class Pl4nEditor extends LitElement {
       window.clearInterval(this.pollTimer);
       this.pollTimer = null;
     }
+    this.editor?.destroy();
   }
 
   firstUpdated() {
-    ensureMonacoWorkers();
     const container = this.querySelector("#editor") as HTMLElement | null;
     if (!container) {
       return;
     }
-    const theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "vs-dark" : "vs";
-    this.editor = monaco.editor.create(container, {
+
+    this.editor = new PlanEditor(container, {
       value: "",
-      language: "markdown",
-      wordWrap: "on",
-      minimap: { enabled: false },
-      lineNumbers: "on",
-      renderWhitespace: "selection",
-      scrollBeyondLastLine: false,
+      baseline: "",
       readOnly: this.readOnly,
-      theme,
-      fontSize: 16,
-      lineNumbersMinChars: 3,
-      glyphMargin: false,
-      folding: false,
-      lineDecorationsWidth: 4,
-      padding: { top: 8, bottom: 8 },
-    });
-
-    this.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-      void this.save();
-    });
-    this.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
-      void this.continueRun();
-    });
-    this.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyZ, () => {
-      this.undo();
-    });
-    this.editor.addCommand(
-      monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyZ,
-      () => {
-        this.redo();
+      onChange: () => {
+        this.dirty = true;
+        this.statusMessage = "Unsaved changes";
+        this.scheduleAutosave();
+        this.requestUpdate();
       },
-    );
-
-    this.editor.onDidChangeModelContent(() => {
-      if (this.suppressChange) {
-        return;
-      }
-      this.dirty = true;
-      this.statusMessage = "Unsaved changes";
-      this.scheduleDraftSave();
-      this.scheduleHistoryCapture();
-      this.updateChangeDecorations();
-      this.requestUpdate();
-    });
-
-    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (event) => {
-      monaco.editor.setTheme(event.matches ? "vs-dark" : "vs");
     });
 
     void this.loadContent();
@@ -150,7 +85,7 @@ class Pl4nEditor extends LitElement {
 
   updated(changed: Map<string, unknown>) {
     if (changed.has("readOnly") && this.editor) {
-      this.editor.updateOptions({ readOnly: this.readOnly });
+      this.editor.setReadOnly(this.readOnly);
     }
   }
 
@@ -163,322 +98,91 @@ class Pl4nEditor extends LitElement {
   };
 
   private handleKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Escape" && this.showDiff) {
-      this.showDiff = false;
+    if (event.key === "Escape" && this.showAutosaveDiff) {
+      this.showAutosaveDiff = false;
       this.requestUpdate();
+      return;
     }
+
+    // Cmd/Ctrl+S to save
+    if ((event.metaKey || event.ctrlKey) && event.key === "s") {
+      event.preventDefault();
+      void this.save();
+      return;
+    }
+
+    // Cmd/Ctrl+Enter to continue
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      void this.continueRun();
+      return;
+    }
+
+    // Note: Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z are handled by ProseMirror internally
   };
 
-  private scheduleDraftSave() {
+  private scheduleAutosave() {
     if (this.readOnly) {
       return;
     }
-    if (this.draftTimer !== null) {
-      window.clearTimeout(this.draftTimer);
+    if (this.autosaveTimer !== null) {
+      window.clearTimeout(this.autosaveTimer);
     }
-    this.draftTimer = window.setTimeout(() => {
-      void this.saveDraft();
+    this.autosaveTimer = window.setTimeout(() => {
+      void this.saveAutosave();
     }, 2000);
   }
 
-  private scheduleHistoryCapture() {
-    if (this.historyTimer !== null) {
-      window.clearTimeout(this.historyTimer);
-    }
-    this.historyTimer = window.setTimeout(() => {
-      this.captureHistory();
-    }, 250);
-  }
-
-  private captureHistory() {
-    if (!this.editor) return;
-    const text = this.editor.getValue();
-    if (text === this.lastHistoryText) return;
-
-    const selection = this.editor.getSelection();
-    const model = this.editor.getModel();
-    if (!selection || !model) return;
-
-    // Push current state before the change
-    if (this.lastHistoryText !== "") {
-      this.undoStack.push({
-        text: this.lastHistoryText,
-        selectionStart: model.getOffsetAt(selection.getStartPosition()),
-        selectionEnd: model.getOffsetAt(selection.getEndPosition()),
-      });
-    }
-    this.lastHistoryText = text;
-    this.redoStack = []; // Clear redo on new changes
-    this.requestUpdate();
-  }
-
-  private undo() {
-    if (!this.editor || this.undoStack.length === 0) return;
-
-    const current = this.editor.getValue();
-    const selection = this.editor.getSelection();
-    const model = this.editor.getModel();
-    if (!selection || !model) return;
-
-    // Save current state to redo stack
-    this.redoStack.push({
-      text: current,
-      selectionStart: model.getOffsetAt(selection.getStartPosition()),
-      selectionEnd: model.getOffsetAt(selection.getEndPosition()),
-    });
-
-    // Pop and restore from undo stack
-    const state = this.undoStack.pop()!;
-    this.suppressChange = true;
-    this.editor.setValue(state.text);
-    this.lastHistoryText = state.text;
-    this.suppressChange = false;
-
-    // Restore cursor position
-    const newModel = this.editor.getModel();
-    if (newModel) {
-      const startPos = newModel.getPositionAt(state.selectionStart);
-      const endPos = newModel.getPositionAt(state.selectionEnd);
-      this.editor.setSelection(
-        new monaco.Selection(
-          startPos.lineNumber,
-          startPos.column,
-          endPos.lineNumber,
-          endPos.column,
-        ),
-      );
-    }
-
-    this.dirty = true;
-    this.updateChangeDecorations();
-    this.requestUpdate();
-  }
-
-  private redo() {
-    if (!this.editor || this.redoStack.length === 0) return;
-
-    const current = this.editor.getValue();
-    const selection = this.editor.getSelection();
-    const model = this.editor.getModel();
-    if (!selection || !model) return;
-
-    // Save current state to undo stack
-    this.undoStack.push({
-      text: current,
-      selectionStart: model.getOffsetAt(selection.getStartPosition()),
-      selectionEnd: model.getOffsetAt(selection.getEndPosition()),
-    });
-
-    // Pop and restore from redo stack
-    const state = this.redoStack.pop()!;
-    this.suppressChange = true;
-    this.editor.setValue(state.text);
-    this.lastHistoryText = state.text;
-    this.suppressChange = false;
-
-    // Restore cursor position
-    const newModel = this.editor.getModel();
-    if (newModel) {
-      const startPos = newModel.getPositionAt(state.selectionStart);
-      const endPos = newModel.getPositionAt(state.selectionEnd);
-      this.editor.setSelection(
-        new monaco.Selection(
-          startPos.lineNumber,
-          startPos.column,
-          endPos.lineNumber,
-          endPos.column,
-        ),
-      );
-    }
-
-    this.dirty = true;
-    this.updateChangeDecorations();
-    this.requestUpdate();
-  }
-
-  private updateChangeDecorations() {
-    if (!this.editor) {
-      return;
-    }
-    const currentContent = this.editor.getValue();
-    const lineChanges = Diff.diffLines(this.lastLoadedContent, currentContent);
-
-    const decorations: monaco.editor.IModelDeltaDecoration[] = [];
-    let _origLine = 1;
-    let currLine = 1;
-    let i = 0;
-
-    while (i < lineChanges.length) {
-      const change = lineChanges[i];
-      const lines = change.value.split("\n");
-      const lineCount = lines[lines.length - 1] === "" ? lines.length - 1 : lines.length;
-
-      if (change.removed && lineChanges[i + 1]?.added) {
-        // Modification: removed followed by added - do char-level diff
-        const removed = change;
-        const added = lineChanges[i + 1];
-        const removedLines = removed.value.split("\n");
-        const removedLineCount =
-          removedLines[removedLines.length - 1] === ""
-            ? removedLines.length - 1
-            : removedLines.length;
-        const addedLines = added.value.split("\n");
-        const addedLineCount =
-          addedLines[addedLines.length - 1] === "" ? addedLines.length - 1 : addedLines.length;
-
-        // Char-level diff on the modified content
-        const charChanges = (Diff as unknown as { diffChars: typeof Diff.diffLines }).diffChars(
-          removed.value,
-          added.value,
-        );
-        let line = currLine;
-        let col = 1;
-
-        for (const charChange of charChanges) {
-          if (charChange.added) {
-            // Calculate end position
-            const text = charChange.value;
-            let endLine = line;
-            let endCol = col;
-            for (const ch of text) {
-              if (ch === "\n") {
-                endLine++;
-                endCol = 1;
-              } else {
-                endCol++;
-              }
-            }
-            // Add inline decoration for added chars
-            if (endLine > line || endCol > col) {
-              decorations.push({
-                range: new monaco.Range(line, col, endLine, endCol),
-                options: {
-                  inlineClassName: "char-added",
-                },
-              });
-            }
-            line = endLine;
-            col = endCol;
-          } else if (charChange.removed) {
-            // Deleted chars - mark deletion point between lines or at position
-            // We'll show a subtle marker at deletion point
-          } else {
-            // Unchanged - advance position
-            for (const ch of charChange.value) {
-              if (ch === "\n") {
-                line++;
-                col = 1;
-              } else {
-                col++;
-              }
-            }
-          }
-        }
-
-        // Add line-level background for modified lines
-        if (addedLineCount > 0) {
-          decorations.push({
-            range: new monaco.Range(currLine, 1, currLine + addedLineCount - 1, 1),
-            options: {
-              isWholeLine: true,
-              className: "line-modified",
-              linesDecorationsClassName: "line-modified-margin",
-            },
-          });
-        }
-
-        _origLine += removedLineCount;
-        currLine += addedLineCount;
-        i += 2;
-      } else if (change.added) {
-        // Pure addition
-        if (lineCount > 0) {
-          decorations.push({
-            range: new monaco.Range(currLine, 1, currLine + lineCount - 1, 1),
-            options: {
-              isWholeLine: true,
-              className: "line-added",
-              linesDecorationsClassName: "line-added-margin",
-            },
-          });
-        }
-        currLine += lineCount;
-        i++;
-      } else if (change.removed) {
-        // Pure deletion - show marker on next line
-        if (currLine <= this.editor.getModel()!.getLineCount()) {
-          decorations.push({
-            range: new monaco.Range(currLine, 1, currLine, 1),
-            options: {
-              linesDecorationsClassName: "line-deleted-marker",
-            },
-          });
-        }
-        _origLine += lineCount;
-        i++;
-      } else {
-        // Unchanged
-        _origLine += lineCount;
-        currLine += lineCount;
-        i++;
-      }
-    }
-
-    this.decorationIds = this.editor.deltaDecorations(this.decorationIds, decorations);
-  }
-
-  private async saveDraft() {
+  private async saveAutosave() {
     if (!this.editor || this.readOnly) {
       return;
     }
     const content = this.editor.getValue();
     try {
-      const response = await fetch(`/api/draft/${this.session}?t=${this.token}`, {
+      const response = await fetch(`/api/autosave/${this.session}?t=${this.token}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content }),
       });
       if (!response.ok) {
-        throw new Error("Draft save failed");
+        throw new Error("Autosave failed");
       }
-      this.hasDraft = true;
-      this.draftContent = content;
-      this.statusMessage = "Draft saved";
+      this.hasAutosave = true;
+      this.autosaveContent = content;
+      this.statusMessage = "Autosaved";
       this.requestUpdate();
     } catch {
-      this.statusMessage = "Draft save failed";
+      this.statusMessage = "Autosave failed";
       this.requestUpdate();
     }
   }
 
-  private async discardDraft() {
+  private async discardAutosave() {
     try {
-      const response = await fetch(`/api/draft/${this.session}?t=${this.token}`, {
+      const response = await fetch(`/api/autosave/${this.session}?t=${this.token}`, {
         method: "DELETE",
       });
       if (!response.ok) {
-        throw new Error("Draft discard failed");
+        throw new Error("Autosave discard failed");
       }
-      this.hasDraft = false;
-      this.draftContent = null;
-      this.statusMessage = "Draft discarded";
+      this.hasAutosave = false;
+      this.autosaveContent = null;
+      this.statusMessage = "Autosave discarded";
       this.requestUpdate();
     } catch {
-      this.statusMessage = "Draft discard failed";
+      this.statusMessage = "Autosave discard failed";
       this.requestUpdate();
     }
   }
 
-  private async restoreDraft() {
-    if (!this.editor || !this.draftContent) {
+  private async restoreAutosave() {
+    if (!this.editor || !this.autosaveContent) {
       return;
     }
-    this.suppressChange = true;
-    this.editor.setValue(this.draftContent);
-    this.suppressChange = false;
+    this.editor.setValue(this.autosaveContent);
     this.dirty = true;
-    await this.discardDraft();
-    this.statusMessage = "Draft restored";
+    await this.discardAutosave();
+    this.statusMessage = "Autosave restored";
     this.requestUpdate();
   }
 
@@ -486,6 +190,11 @@ class Pl4nEditor extends LitElement {
     try {
       const response = await fetch(`/api/content/${this.session}?t=${this.token}`);
       if (!response.ok) {
+        // Use test content for development/testing when API unavailable
+        if (this.session === "test-session") {
+          this.loadTestContent();
+          return;
+        }
         this.statusMessage = `Load failed (${response.status})`;
         this.requestUpdate();
         return;
@@ -496,30 +205,93 @@ class Pl4nEditor extends LitElement {
         turn: number;
         phase: string;
         readOnly: boolean;
-        hasDraft: boolean;
-        draft?: string | null;
+        hasAutosave: boolean;
+        autosave: string | null;
+        snapshot: string | null;
       };
       this.mtime = data.mtime;
       this.turn = data.turn;
       this.phase = data.phase;
       this.readOnly = data.readOnly;
-      this.hasDraft = data.hasDraft;
-      this.draftContent = data.draft ?? null;
+      this.hasAutosave = data.hasAutosave;
+      this.autosaveContent = data.autosave;
+      this.snapshotContent = data.snapshot;
       this.lastLoadedContent = data.content;
-      this.suppressChange = true;
-      this.editor?.setValue(data.content);
-      this.suppressChange = false;
+
+      if (this.editor) {
+        this.editor.setBaseline(data.content);
+        this.editor.setValue(data.content);
+        this.editor.setReadOnly(data.readOnly);
+      }
+
       this.dirty = false;
-      // Initialize undo/redo history
-      this.lastHistoryText = data.content;
-      this.undoStack = [];
-      this.redoStack = [];
       this.statusMessage = data.readOnly ? "Read-only" : "Ready";
       this.requestUpdate();
     } catch {
+      // Use test content for development/testing when API unavailable
+      if (this.session === "test-session") {
+        this.loadTestContent();
+        return;
+      }
       this.statusMessage = "Load failed";
       this.requestUpdate();
     }
+  }
+
+  private loadTestContent() {
+    const testContent = `# Implementation Plan
+
+## Overview
+This is a test document to verify the PlanEditor component works correctly.
+
+## Architecture
+
+\`\`\`
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│   Client    │───▶│   Server    │───▶│  Database   │
+│  (React)    │    │  (Node.js)  │    │ (Postgres)  │
+└─────────────┘    └─────────────┘    └─────────────┘
+       │                  │
+       │                  ▼
+       │           ┌─────────────┐
+       └──────────▶│   Cache     │
+                   │  (Redis)    │
+                   └─────────────┘
+\`\`\`
+
+## Tasks
+1. First task - implement the feature
+2. Second task - write tests
+3. Third task - update documentation
+
+## Code Example
+
+\`\`\`typescript
+function hello() {
+  console.log("Hello, world!");
+}
+\`\`\`
+
+## Notes
+- The editor should support iOS autocomplete
+- ASCII diagrams scroll horizontally on mobile
+- Character-level diff highlighting shows additions
+- Click "Show Diff" to see all changes including deletions
+
+Try editing this text to see the diff highlighting in action!`;
+
+    this.lastLoadedContent = testContent;
+    this.snapshotContent = testContent;
+
+    if (this.editor) {
+      this.editor.setBaseline(testContent);
+      this.editor.setValue(testContent);
+      this.editor.setReadOnly(this.readOnly);
+    }
+
+    this.dirty = false;
+    this.statusMessage = "Test mode - Ready";
+    this.requestUpdate();
   }
 
   private async save() {
@@ -530,10 +302,11 @@ class Pl4nEditor extends LitElement {
     this.statusMessage = "Saving...";
     this.requestUpdate();
     try {
+      const content = this.editor.getValue();
       const response = await fetch(`/api/save/${this.session}?t=${this.token}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: this.editor.getValue(), mtime: this.mtime }),
+        body: JSON.stringify({ content, mtime: this.mtime }),
       });
       if (response.status === 409) {
         const payload = (await response.json()) as { mtime?: number };
@@ -548,10 +321,10 @@ class Pl4nEditor extends LitElement {
         const payload = (await response.json()) as { mtime: number };
         this.mtime = payload.mtime;
         this.dirty = false;
-        this.hasDraft = false;
-        this.draftContent = null;
-        this.lastLoadedContent = this.editor.getValue();
-        this.updateChangeDecorations();
+        this.hasAutosave = false;
+        this.autosaveContent = null;
+        this.lastLoadedContent = content;
+        this.editor.setBaseline(content);
         this.statusMessage = "Saved";
       } else {
         this.statusMessage = `Save failed (${response.status})`;
@@ -569,8 +342,8 @@ class Pl4nEditor extends LitElement {
       return;
     }
 
-    // If no changes, approve instead of running another turn
     const currentContent = this.editor.getValue();
+    // If no changes, approve instead of running another turn
     if (currentContent === this.lastLoadedContent) {
       const confirmed = window.confirm(
         "No changes detected. This will approve the plan as final.\n\nApprove?",
@@ -589,7 +362,7 @@ class Pl4nEditor extends LitElement {
       const response = await fetch(`/api/continue/${this.session}?t=${this.token}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: this.editor.getValue(), mtime: this.mtime }),
+        body: JSON.stringify({ content: currentContent, mtime: this.mtime }),
       });
       if (response.status === 409) {
         const payload = (await response.json()) as { mtime?: number };
@@ -689,17 +462,35 @@ class Pl4nEditor extends LitElement {
     }, 2500);
   }
 
-  private renderDiffModal() {
-    if (!this.showDiff || !this.draftContent) {
+  private undo() {
+    this.editor?.undo();
+  }
+
+  private redo() {
+    this.editor?.redo();
+  }
+
+  private showDiff() {
+    if (!this.editor) {
+      return;
+    }
+    const baseline = this.snapshotContent ?? this.lastLoadedContent;
+    this.editor.showDiffAgainst(baseline);
+  }
+
+  private renderAutosaveDiffModal() {
+    if (!this.showAutosaveDiff || !this.autosaveContent) {
       return null;
     }
-    const diff = Diff.diffLines(this.lastLoadedContent, this.draftContent);
+    const diff = Diff.diffLines(this.lastLoadedContent, this.autosaveContent);
     return html`
-      <div class="modal-backdrop" @click=${() => (this.showDiff = false)}>
+      <div class="modal-backdrop" @click=${() => (this.showAutosaveDiff = false)}>
         <div class="modal" @click=${(event: Event) => event.stopPropagation()}>
           <div class="header">
-            <h2>Draft Diff</h2>
-            <button class="button secondary" @click=${() => (this.showDiff = false)}>Close</button>
+            <h2>Autosave Diff</h2>
+            <button class="button secondary" @click=${() => (this.showAutosaveDiff = false)}>
+              Close
+            </button>
           </div>
           ${diff.map((part: Change) => {
             const cls = part.added
@@ -727,16 +518,16 @@ class Pl4nEditor extends LitElement {
         </div>
 
         ${
-          this.hasDraft
+          this.hasAutosave
             ? html`
               <div class="editor-banner">
-                <span>Draft recovery available from your last autosave.</span>
+                <span>Autosave recovery available.</span>
                 <div class="banner-actions">
-                  <button class="button secondary" @click=${() => (this.showDiff = true)}>
+                  <button class="button secondary" @click=${() => (this.showAutosaveDiff = true)}>
                     View diff
                   </button>
-                  <button class="button" @click=${() => this.restoreDraft()}>Restore</button>
-                  <button class="button" @click=${() => this.discardDraft()}>Discard</button>
+                  <button class="button" @click=${() => this.restoreAutosave()}>Restore</button>
+                  <button class="button" @click=${() => this.discardAutosave()}>Discard</button>
                 </div>
               </div>
             `
@@ -744,7 +535,7 @@ class Pl4nEditor extends LitElement {
         }
 
         <div class="editor-container">
-          <div id="editor" class="monaco-host"></div>
+          <div id="editor" class="plan-editor-host"></div>
         </div>
 
         <div class="footer">
@@ -753,6 +544,7 @@ class Pl4nEditor extends LitElement {
             this.readOnly
               ? html``
               : html`<div class="button-row">
+                <button class="button secondary" @click=${() => this.showDiff()}>Show Diff</button>
                 <button class="button" ?disabled=${this.saving} @click=${() => this.save()}>
                   Save
                 </button>
@@ -767,29 +559,18 @@ class Pl4nEditor extends LitElement {
           }
         </div>
       </div>
-      ${this.renderUndoRedoButtons()}
-      ${this.renderDiffModal()}
+      ${this.renderUndoRedoButtons()} ${this.renderAutosaveDiffModal()}
     `;
   }
 
   private renderUndoRedoButtons() {
     if (this.readOnly) return null;
-    const canUndo = this.undoStack.length > 0;
-    const canRedo = this.redoStack.length > 0;
     return html`
       <div class="undo-redo-float">
-        <button
-          class="undo-redo-btn"
-          ?disabled=${!canUndo}
-          @click=${() => this.undo()}
-          title="Undo (Cmd+Z)"
-        >↶</button>
-        <button
-          class="undo-redo-btn"
-          ?disabled=${!canRedo}
-          @click=${() => this.redo()}
-          title="Redo (Cmd+Shift+Z)"
-        >↷</button>
+        <button class="undo-redo-btn" @click=${() => this.undo()} title="Undo (Cmd+Z)">↶</button>
+        <button class="undo-redo-btn" @click=${() => this.redo()} title="Redo (Cmd+Shift+Z)">
+          ↷
+        </button>
       </div>
     `;
   }

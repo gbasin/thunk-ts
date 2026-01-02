@@ -158,75 +158,31 @@ pl4n-list {
   background: var(--surface-2);
 }
 
-.monaco-host {
+/* PlanEditor host - fills container */
+.plan-editor-host {
   height: 100%;
   width: 100%;
 }
 
-/* Added lines - green tint */
-.line-added {
-  background: rgba(80, 180, 80, 0.12) !important;
-}
-
-.line-added-margin {
-  background: rgba(80, 160, 80, 0.7);
-  width: 3px !important;
-  margin-left: 3px;
-}
-
-/* Modified lines - yellow/orange tint */
-.line-modified {
-  background: rgba(255, 180, 50, 0.1) !important;
-}
-
-.line-modified-margin {
-  background: rgba(255, 140, 0, 0.6);
-  width: 3px !important;
-  margin-left: 3px;
-}
-
-/* Char-level additions within modified lines */
-.char-added {
-  background: rgba(255, 200, 80, 0.35);
-  border-radius: 2px;
-}
-
-/* Deleted line marker - red bar between lines */
-.line-deleted-marker {
-  position: relative;
-  width: 3px !important;
-  margin-left: 3px;
-}
-
-.line-deleted-marker::before {
-  content: "";
-  position: absolute;
-  top: -1px;
-  left: -6px;
-  right: -100vw;
-  height: 2px;
-  background: rgba(200, 80, 80, 0.5);
-  pointer-events: none;
+/* Override DiffTextarea CSS variables to match theme */
+.diff-textarea-container {
+  --editor-bg: var(--surface-2);
+  --editor-fg: var(--text);
+  --editor-padding: 12px;
+  --editor-font: var(--font-mono);
+  --editor-font-size: 15px;
+  --editor-line-height: 1.6;
+  --diff-added-bg: rgba(80, 180, 80, 0.15);
+  --diff-added-char: rgba(80, 200, 80, 0.35);
+  --diff-modified-bg: rgba(255, 180, 50, 0.12);
+  --diff-deleted-marker: rgba(220, 80, 80, 0.6);
 }
 
 @media (prefers-color-scheme: dark) {
-  .line-added {
-    background: rgba(80, 180, 80, 0.08) !important;
-  }
-  .line-added-margin {
-    background: rgba(100, 180, 100, 0.8);
-  }
-  .line-modified {
-    background: rgba(255, 180, 50, 0.08) !important;
-  }
-  .line-modified-margin {
-    background: rgba(255, 160, 50, 0.7);
-  }
-  .char-added {
-    background: rgba(255, 200, 80, 0.25);
-  }
-  .line-deleted-marker::before {
-    background: rgba(220, 100, 100, 0.6);
+  .diff-textarea-container {
+    --diff-added-bg: rgba(80, 180, 80, 0.1);
+    --diff-added-char: rgba(80, 200, 80, 0.25);
+    --diff-modified-bg: rgba(255, 180, 50, 0.08);
   }
 }
 
@@ -449,5 +405,316 @@ pl4n-list {
     width: 40px;
     height: 40px;
     font-size: 18px;
+  }
+}
+
+/* ProseMirror Plan Editor styles */
+.plan-editor-container {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.plan-editor {
+  min-height: 100%;
+  padding: var(--editor-padding, 12px);
+  font-family: var(--font-mono);
+  font-size: var(--editor-font-size, 15px);
+  line-height: var(--editor-line-height, 1.6);
+  color: var(--text);
+  background: var(--surface-2);
+  outline: none;
+}
+
+.plan-editor p {
+  margin: 0 0 1em 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.plan-editor .code-block {
+  margin: 0.5em 0;
+  padding: 12px;
+  background: var(--code-bg, rgba(128, 128, 128, 0.1));
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.plan-editor .code-block code {
+  font-family: inherit;
+}
+
+/* Diagram wrapper - handles scroll and expand button */
+.plan-editor .diagram-wrapper {
+  margin: 0.5em 0;
+  position: relative;
+}
+
+.plan-editor .diagram-block {
+  margin: 0;
+  padding: 12px;
+  background: var(--code-bg, rgba(128, 128, 128, 0.1));
+  border-radius: 4px;
+  white-space: pre;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+
+.plan-editor .diagram-block code {
+  font-family: inherit;
+  display: block;
+  min-width: min-content;
+}
+
+/* Diagram expand button */
+.diagram-expand-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 40px;
+  height: 40px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.9;
+  z-index: 10;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.diagram-expand-btn:hover {
+  opacity: 1;
+  transform: scale(1.05);
+}
+
+/* Selection styling */
+.plan-editor ::selection {
+  background: rgba(0, 100, 255, 0.3);
+}
+
+/* ProseMirror cursor */
+.ProseMirror-focused {
+  outline: none;
+}
+
+/* Diff highlighting - additions inline */
+.diff-added {
+  background: var(--diff-added-char, rgba(80, 200, 80, 0.35));
+  border-radius: 2px;
+}
+
+/* Full-screen diagram viewer */
+.diagram-viewer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.9);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s, visibility 0.2s;
+}
+
+.diagram-viewer-backdrop.open {
+  opacity: 1;
+  visibility: visible;
+}
+
+.diagram-viewer-container {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--surface);
+  border-radius: 8px;
+  touch-action: pan-x pan-y pinch-zoom;
+}
+
+.diagram-viewer-content {
+  padding: 16px;
+  font-family: var(--font-mono);
+  font-size: 16px;
+  line-height: 1.5;
+  white-space: pre;
+  color: var(--text);
+  margin: 0;
+  min-width: min-content;
+  transform-origin: 0 0;
+  transition: transform 0.1s ease-out;
+}
+
+.diagram-viewer-close {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  width: 44px;
+  height: 44px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  font-size: 24px;
+  cursor: pointer;
+  z-index: 101;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+}
+
+.diagram-viewer-zoom {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  z-index: 101;
+}
+
+.diagram-viewer-zoom button {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  color: var(--text);
+}
+
+.diagram-viewer-zoom-label {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  font-size: 14px;
+  min-width: 60px;
+  justify-content: center;
+  color: var(--text);
+}
+
+/* Diff viewer modal */
+.diff-viewer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 8, 6, 0.8);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s, visibility 0.2s;
+}
+
+.diff-viewer-backdrop.open {
+  opacity: 1;
+  visibility: visible;
+}
+
+.diff-viewer-container {
+  width: 100%;
+  max-width: 800px;
+  max-height: 80vh;
+  background: var(--surface);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.diff-viewer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.diff-viewer-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.diff-viewer-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  color: var(--text);
+}
+
+.diff-viewer-content {
+  flex: 1;
+  overflow: auto;
+  padding: 12px;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-overflow-scrolling: touch;
+}
+
+.diff-line-add {
+  white-space: pre-wrap;
+  word-break: break-all;
+  padding: 2px 4px;
+  border-radius: 2px;
+  margin: 1px 0;
+  background: rgba(80, 180, 80, 0.25);
+}
+
+.diff-line-remove {
+  white-space: pre-wrap;
+  word-break: break-all;
+  padding: 2px 4px;
+  border-radius: 2px;
+  margin: 1px 0;
+  background: rgba(220, 80, 80, 0.25);
+  text-decoration: line-through;
+  opacity: 0.8;
+}
+
+.diff-line-context {
+  white-space: pre-wrap;
+  word-break: break-all;
+  padding: 2px 4px;
+  margin: 1px 0;
+  opacity: 0.6;
+}
+
+.diff-no-changes {
+  text-align: center;
+  padding: 40px;
+  opacity: 0.6;
+}
+
+@media (prefers-color-scheme: dark) {
+  .diff-added {
+    background: rgba(80, 200, 80, 0.25);
   }
 }

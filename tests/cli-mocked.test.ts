@@ -20,6 +20,7 @@ const cliDeps: Partial<CliDeps> = {
   startServer: async (opts) => {
     startServerCalls.push(opts ?? null);
   },
+  findAvailablePort: async (start) => start,
   TurnOrchestrator: class {
     manager: SessionManager;
     constructor(manager: SessionManager, _config: Pl4nConfig) {
