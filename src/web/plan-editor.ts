@@ -376,6 +376,18 @@ class DiffViewer {
       if (e.target === this.backdrop) this.close();
     });
 
+    // Prevent scroll pass-through on touch devices
+    this.backdrop.addEventListener(
+      "touchmove",
+      (e) => {
+        // Only prevent if not scrolling inside the content
+        if (!container.contains(e.target as globalThis.Node)) {
+          e.preventDefault();
+        }
+      },
+      { passive: false },
+    );
+
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && this.backdrop.classList.contains("open")) {
         this.close();

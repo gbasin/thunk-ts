@@ -517,7 +517,7 @@ pl4n-list {
   white-space: pre;
   pointer-events: none;
   background: rgba(220, 80, 80, 0.1);
-  color: rgba(220, 80, 80, 0.65);
+  color: rgba(220, 80, 80, 0.4);
   text-decoration: line-through;
   text-decoration-thickness: 1px;
   border-radius: 2px;
@@ -645,6 +645,7 @@ pl4n-list {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
+  touch-action: none;
 }
 
 .diff-viewer-container {
@@ -657,6 +658,8 @@ pl4n-list {
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--border);
+  touch-action: pan-y;
+  overscroll-behavior: contain;
 }
 
 .diff-viewer-header {
