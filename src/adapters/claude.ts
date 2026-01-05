@@ -156,6 +156,10 @@ export class ClaudeCodeAdapter extends AgentAdapter {
     const finalPrompt = applyThinking(this.config, prompt);
     const cmd = buildCmd(this.config, finalPrompt, sessionId);
 
+    // Create log file synchronously before spawning to avoid race conditions
+    fsSync.mkdirSync(path.dirname(logFile), { recursive: true });
+    fsSync.writeFileSync(logFile, "", "utf8");
+
     const proc = Bun.spawn({
       cmd,
       cwd: worktree,
@@ -185,6 +189,11 @@ export class ClaudeCodeSyncAdapter extends AgentAdapter {
     const sessionId = readSessionIdSync(sessionFile);
     const finalPrompt = applyThinking(this.config, prompt);
     const cmd = buildCmd(this.config, finalPrompt, sessionId, worktree);
+
+    // Create log file synchronously before spawning to avoid race conditions
+    fsSync.mkdirSync(path.dirname(logFile), { recursive: true });
+    fsSync.writeFileSync(logFile, "", "utf8");
+
     const proc = Bun.spawn({
       cmd,
       cwd: worktree,

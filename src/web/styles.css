@@ -733,6 +733,99 @@ pl4n-list {
   opacity: 0.6;
 }
 
+/* Continue confirmation panel */
+.continue-confirm-panel {
+  width: 100%;
+  padding: 16px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(120deg, rgba(255, 107, 53, 0.08), rgba(44, 110, 143, 0.06));
+  border: 1px solid var(--border);
+}
+
+.continue-confirm-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  user-select: none;
+  padding: 4px 0;
+}
+
+.continue-confirm-header:hover {
+  opacity: 0.8;
+}
+
+.continue-confirm-arrow {
+  font-size: 12px;
+  color: var(--muted);
+  width: 16px;
+}
+
+.continue-confirm-summary {
+  color: var(--text);
+}
+
+.continue-confirm-diff {
+  margin: 12px 0;
+  max-height: 200px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  -webkit-overflow-scrolling: touch;
+}
+
+.continue-confirm-diff .diff-line {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 2px 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.continue-confirm-diff .diff-collapsed {
+  text-align: center;
+  color: var(--muted);
+  font-style: italic;
+  background: transparent;
+  border-top: 1px dashed var(--border);
+  border-bottom: 1px dashed var(--border);
+  padding: 4px 8px;
+}
+
+.continue-confirm-message {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 12px 0;
+}
+
+.continue-confirm-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .continue-confirm-panel {
+    padding: 12px;
+  }
+
+  .continue-confirm-diff {
+    max-height: 150px;
+  }
+
+  .continue-confirm-actions {
+    flex-wrap: wrap;
+  }
+
+  .continue-confirm-actions .button {
+    flex: 1;
+    min-width: 100px;
+  }
+}
+
 @media (prefers-color-scheme: dark) {
   .diff-added {
     background: rgba(80, 200, 80, 0.25);

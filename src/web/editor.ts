@@ -40,6 +40,8 @@ class Pl4nEditor extends LitElement {
   private showAutosaveDiff = false;
   private lastLoadedContent = "";
   private snapshotContent: string | null = null;
+  private showContinueConfirm = false;
+  private continueConfirmExpanded = false;
 
   createRenderRoot() {
     return this;
@@ -360,14 +362,35 @@ Try editing this text to see the diff highlighting in action!`;
       return;
     }
 
+    // Show confirmation panel instead of immediately continuing
+    this.showContinueConfirm = true;
+    this.continueConfirmExpanded = false;
+    this.requestUpdate();
+  }
+
+  private cancelContinue() {
+    this.showContinueConfirm = false;
+    this.continueConfirmExpanded = false;
+    this.requestUpdate();
+  }
+
+  private async confirmContinue() {
+    if (!this.editor) {
+      return;
+    }
+
+    this.showContinueConfirm = false;
+    this.continueConfirmExpanded = false;
     this.continuing = true;
     this.statusMessage = "Saving & running agents...";
     this.requestUpdate();
+
     try {
+      const content = this.editor.getValue();
       const response = await fetch(`/api/continue/${this.session}?t=${this.token}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: currentContent, mtime: this.mtime }),
+        body: JSON.stringify({ content, mtime: this.mtime }),
       });
       if (response.status === 409) {
         const payload = (await response.json()) as { mtime?: number };
@@ -510,6 +533,118 @@ Try editing this text to see the diff highlighting in action!`;
     `;
   }
 
+  private renderContinueConfirmPanel() {
+    if (!this.showContinueConfirm || !this.editor) {
+      return null;
+    }
+
+    const currentContent = this.editor.getValue();
+    const diff = Diff.diffLines(this.lastLoadedContent, currentContent);
+
+    let additions = 0;
+    let deletions = 0;
+    for (const part of diff) {
+      const lines = part.value.split("\n").length - 1 || 1;
+      if (part.added) {
+        additions += lines;
+      } else if (part.removed) {
+        deletions += lines;
+      }
+    }
+
+    const summary = `${additions} addition${additions !== 1 ? "s" : ""}, ${deletions} deletion${deletions !== 1 ? "s" : ""}`;
+
+    // Collapse unchanged sections - show only 2 context lines around changes
+    const contextLines = 2;
+    const collapsedDiff: Array<{
+      type: "add" | "remove" | "context" | "collapsed";
+      value: string;
+      count?: number;
+    }> = [];
+
+    for (let i = 0; i < diff.length; i++) {
+      const part = diff[i];
+      if (part.added || part.removed) {
+        collapsedDiff.push({
+          type: part.added ? "add" : "remove",
+          value: part.value,
+        });
+      } else {
+        // Unchanged section - collapse if large
+        const lines = part.value.split("\n");
+        // Remove trailing empty from split
+        if (lines[lines.length - 1] === "") lines.pop();
+
+        if (lines.length <= contextLines * 2 + 1) {
+          // Small enough to show fully
+          collapsedDiff.push({ type: "context", value: part.value });
+        } else {
+          // Show first N lines, collapse middle, show last N lines
+          const isFirst = i === 0;
+          const isLast = i === diff.length - 1;
+
+          if (!isFirst) {
+            const leadingLines = lines.slice(0, contextLines).join("\n") + "\n";
+            collapsedDiff.push({ type: "context", value: leadingLines });
+          }
+
+          const collapsedCount =
+            lines.length - (isFirst ? 0 : contextLines) - (isLast ? 0 : contextLines);
+          if (collapsedCount > 0) {
+            collapsedDiff.push({ type: "collapsed", value: "", count: collapsedCount });
+          }
+
+          if (!isLast) {
+            const trailingLines = lines.slice(-contextLines).join("\n") + "\n";
+            collapsedDiff.push({ type: "context", value: trailingLines });
+          }
+        }
+      }
+    }
+
+    return html`
+      <div class="continue-confirm-panel">
+        <div
+          class="continue-confirm-header"
+          @click=${() => {
+            this.continueConfirmExpanded = !this.continueConfirmExpanded;
+            this.requestUpdate();
+          }}
+        >
+          <span class="continue-confirm-arrow">${this.continueConfirmExpanded ? "▼" : "▶"}</span>
+          <span class="continue-confirm-summary">Review changes (${summary})</span>
+        </div>
+        ${
+          this.continueConfirmExpanded
+            ? html`
+              <div class="continue-confirm-diff">
+                ${collapsedDiff.map((part) => {
+                  if (part.type === "collapsed") {
+                    return html`<div class="diff-line diff-collapsed">··· ${part.count} unchanged lines ···</div>`;
+                  }
+                  const cls =
+                    part.type === "add"
+                      ? "diff-line diff-add"
+                      : part.type === "remove"
+                        ? "diff-line diff-remove"
+                        : "diff-line";
+                  return html`<div class=${cls}>${part.value}</div>`;
+                })}
+              </div>
+            `
+            : null
+        }
+        <div class="continue-confirm-message">
+          This will save your edits and start a new agent turn.
+        </div>
+        <div class="continue-confirm-actions">
+          <button class="button secondary" @click=${() => this.cancelContinue()}>Cancel</button>
+          <button class="button primary" @click=${() => this.confirmContinue()}>Run Agents</button>
+        </div>
+      </div>
+    `;
+  }
+
   render() {
     const approved = this.phase === "approved";
     return html`
@@ -547,23 +682,31 @@ Try editing this text to see the diff highlighting in action!`;
         </div>
 
         <div class="footer">
-          <div class="status">${this.statusMessage}</div>
           ${
-            this.readOnly
-              ? html``
-              : html`<div class="button-row">
-                <button class="button secondary" @click=${() => this.showDiff()}>Show Diff</button>
-                <button class="button" ?disabled=${this.saving} @click=${() => this.save()}>
-                  Save
-                </button>
-                <button
-                  class="button primary"
-                  ?disabled=${this.continuing}
-                  @click=${() => this.continueRun()}
-                >
-                  ${this.continuing ? "Working..." : "Save & Continue"}
-                </button>
-              </div>`
+            this.showContinueConfirm
+              ? this.renderContinueConfirmPanel()
+              : html`
+                <div class="status">${this.statusMessage}</div>
+                ${
+                  this.readOnly
+                    ? html``
+                    : html`<div class="button-row">
+                      <button class="button secondary" @click=${() => this.showDiff()}>
+                        Show Diff
+                      </button>
+                      <button class="button" ?disabled=${this.saving} @click=${() => this.save()}>
+                        Save
+                      </button>
+                      <button
+                        class="button primary"
+                        ?disabled=${this.continuing}
+                        @click=${() => this.continueRun()}
+                      >
+                        ${this.continuing ? "Working..." : "Save & Continue"}
+                      </button>
+                    </div>`
+                }
+              `
           }
         </div>
       </div>
