@@ -323,6 +323,11 @@ Try editing this text to see the diff highlighting in action!`;
         this.dirty = false;
         this.hasAutosave = false;
         this.autosaveContent = null;
+        // Clear any pending autosave timer to prevent it from firing after save
+        if (this.autosaveTimer !== null) {
+          window.clearTimeout(this.autosaveTimer);
+          this.autosaveTimer = null;
+        }
         this.lastLoadedContent = content;
         this.editor.setBaseline(content);
         this.statusMessage = "Saved";
