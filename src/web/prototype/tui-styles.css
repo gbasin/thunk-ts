@@ -1,0 +1,1145 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   PL4N TUI - Retro Terminal User Interface
+   Inspired by Norton Commander, Turbo Pascal, and classic DOS applications
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Light TUI palette - Paper & Ink */
+  --tui-bg: #f5f3ef;
+  --tui-bg-panel: #eae7e1;
+  --tui-fg: #2d2a26;
+  --tui-fg-dim: #6b665e;
+  --tui-fg-bright: #1a1816;
+  --tui-highlight: #e0dcd4;
+  --tui-selection: #c9d4e8;
+  --tui-border: #9b958a;
+  --tui-accent: #0066cc;
+  --tui-error: #c53030;
+  --tui-success: #2e7d32;
+
+  /* Typography - use reliable system monospace fonts */
+  --tui-font: "SF Mono", "Menlo", "Monaco", "Consolas", "Liberation Mono", "Courier New", monospace;
+  --tui-font-size: 13px;
+  --tui-line-height: 1.5;
+
+  /* Scanline effect - subtle for light mode */
+  --scanline-opacity: 0.015;
+}
+
+/* Dark mode variant (phosphor green) */
+.tui-dark {
+  --tui-bg: #0a0f0a;
+  --tui-bg-panel: #0d140d;
+  --tui-fg: #33ff33;
+  --tui-fg-dim: #1a8c1a;
+  --tui-fg-bright: #66ff66;
+  --tui-highlight: #001a00;
+  --tui-selection: #1a4d1a;
+  --tui-border: #1a8c1a;
+  --tui-accent: #ffff33;
+  --tui-error: #ff3333;
+  --tui-success: #33ff33;
+  --scanline-opacity: 0.03;
+}
+
+/* Sepia/warm variant */
+.tui-sepia {
+  --tui-bg: #f8f4e8;
+  --tui-bg-panel: #f0eadb;
+  --tui-fg: #3d3528;
+  --tui-fg-dim: #7a7060;
+  --tui-fg-bright: #2a241a;
+  --tui-highlight: #e8e0cc;
+  --tui-selection: #d4c8a8;
+  --tui-border: #a89878;
+  --tui-accent: #8b4513;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--tui-font);
+  font-size: var(--tui-font-size);
+  line-height: var(--tui-line-height);
+  background: var(--tui-bg);
+  color: var(--tui-fg);
+}
+
+/* No texture overlays - clean background */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Main Layout
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.tui-page {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 2px;
+}
+
+.tui-title-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 1ch;
+  background: var(--tui-fg);
+  color: var(--tui-bg);
+  font-weight: bold;
+  height: 1.4em;
+  flex-shrink: 0;
+}
+
+.tui-title-bar .title {
+  font-weight: bold;
+}
+
+.tui-title-bar .session-name {
+  font-weight: normal;
+  opacity: 0.7;
+  margin-left: auto;
+}
+
+.tui-title-bar .font-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 2ch;
+}
+
+.tui-title-bar .font-btn {
+  background: transparent;
+  border: 1px solid currentColor;
+  color: inherit;
+  width: 1.4em;
+  height: 1.2em;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.8;
+}
+
+.tui-title-bar .font-btn:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.tui-title-bar .font-size {
+  font-size: 11px;
+  min-width: 2ch;
+  text-align: center;
+}
+
+.tui-title-bar .clock {
+  font-weight: normal;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Panel with simple CSS borders (more reliable than box-drawing chars)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.tui-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  margin: 12px 4px 2px 4px;
+  position: relative;
+  min-height: 0;
+  border: 1px solid var(--tui-border);
+  background: var(--tui-bg);
+}
+
+.tui-panel-border,
+.tui-panel-sides,
+.tui-panel-sides-right {
+  display: none; /* Hide the complex box-drawing elements */
+}
+
+.tui-panel-header {
+  position: absolute;
+  top: -0.7em;
+  left: 1ch;
+  padding: 0 1ch;
+  background: var(--tui-bg);
+  color: var(--tui-fg-bright);
+  font-weight: bold;
+  z-index: 1;
+  font-size: var(--tui-font-size);
+}
+
+.tui-panel-content {
+  flex: 1;
+  padding: 0.5em 0;
+  overflow: auto;
+  min-height: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Info Bar (session metadata)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.tui-info-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5ch 2ch;
+  padding: 2px 1ch;
+  background: var(--tui-bg-panel);
+  border-top: 1px solid var(--tui-border);
+  border-bottom: 1px solid var(--tui-border);
+  min-height: 1.4em;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.tui-info-item {
+  display: flex;
+  gap: 0.5ch;
+  white-space: nowrap;
+}
+
+.tui-info-label {
+  color: var(--tui-fg-dim);
+}
+
+.tui-info-value {
+  color: var(--tui-fg-bright);
+  max-width: 20ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tui-info-value.status-ready {
+  color: var(--tui-success);
+}
+
+.tui-info-value.status-working {
+  color: var(--tui-accent);
+  animation: blink 1s step-end infinite;
+}
+
+.tui-info-value.status-error {
+  color: var(--tui-error);
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Editor Area
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+pl4n-editor {
+  display: contents;
+}
+
+.tui-editor-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Override editor shell styles for TUI */
+.editor-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+  gap: 0;
+  animation: none;
+}
+
+.editor-shell .header {
+  display: none;
+}
+
+.editor-shell .editor-banner {
+  background: var(--tui-highlight);
+  border: 1px solid var(--tui-accent);
+  border-radius: 0;
+  padding: 0.5em 1ch;
+  margin: 0 1ch 0.5em 1ch;
+  color: var(--tui-accent);
+}
+
+.editor-shell .editor-container {
+  flex: 1;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.editor-shell .plan-editor-host {
+  height: 100%;
+}
+
+.editor-shell .plan-editor-container {
+  height: 100%;
+  background: var(--tui-bg);
+}
+
+.editor-shell .plan-editor {
+  background: var(--tui-bg);
+  color: var(--tui-fg);
+  font-family: var(--tui-font);
+  font-size: var(--tui-font-size);
+  line-height: var(--tui-line-height);
+  padding: 0.5em 1ch;
+  min-height: 100%;
+}
+
+.editor-shell .plan-editor p {
+  margin: 0 0 1em 0;
+}
+
+.editor-shell .plan-editor .code-block,
+.editor-shell .plan-editor .diagram-block {
+  background: var(--tui-bg-panel);
+  border: 1px solid var(--tui-border);
+  border-radius: 0;
+  padding: 0.5em 1ch;
+  margin: 0.5em 0;
+}
+
+.editor-shell .plan-editor ::selection {
+  background: var(--tui-selection);
+  color: var(--tui-fg-bright);
+}
+
+/* Diff highlighting for TUI - light mode */
+.editor-shell .diff-added {
+  background: rgba(46, 125, 50, 0.15);
+  border-bottom: 1px solid var(--tui-success);
+}
+
+.editor-shell .diff-removed {
+  background: rgba(197, 48, 48, 0.12);
+  color: var(--tui-error);
+  text-decoration: line-through;
+}
+
+/* Diff highlighting for dark mode */
+.tui-dark .editor-shell .diff-added {
+  background: rgba(51, 255, 51, 0.2);
+  border-bottom: 1px solid var(--tui-fg);
+}
+
+.tui-dark .editor-shell .diff-removed {
+  background: rgba(255, 51, 51, 0.15);
+}
+
+/* Footer with action buttons - TUI styled */
+.editor-shell .footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 1ch;
+  border-top: 1px solid var(--tui-border);
+  background: var(--tui-bg-panel);
+}
+
+.editor-shell .footer .status {
+  color: var(--tui-fg-dim);
+  font-size: 12px;
+}
+
+.editor-shell .footer .button-row {
+  display: flex;
+  gap: 8px;
+}
+
+.editor-shell .footer .button {
+  background: var(--tui-bg);
+  color: var(--tui-fg);
+  border: 1px solid var(--tui-border);
+  border-radius: 0;
+  font-family: var(--tui-font);
+  font-size: 12px;
+  padding: 4px 12px;
+  min-height: auto;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.editor-shell .footer .button:hover {
+  background: var(--tui-highlight);
+  border-color: var(--tui-fg);
+}
+
+.editor-shell .footer .button.primary {
+  background: var(--tui-fg);
+  color: var(--tui-bg);
+  border-color: var(--tui-fg);
+}
+
+.editor-shell .footer .button.primary:hover {
+  background: var(--tui-fg-bright);
+}
+
+.editor-shell .footer .button.secondary {
+  border-style: solid;
+}
+
+.editor-shell .footer .button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Function Key Bar (DOS-style)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.tui-fn-bar {
+  display: flex;
+  flex-wrap: wrap;
+  background: var(--tui-bg);
+  border-top: 1px solid var(--tui-border);
+  flex-shrink: 0;
+}
+
+.tui-fn-item {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: stretch;
+  cursor: pointer;
+  transition: background 0.1s;
+  height: 1.6em;
+}
+
+.tui-fn-item:hover {
+  background: var(--tui-highlight);
+}
+
+.tui-fn-item:active {
+  background: var(--tui-selection);
+}
+
+.tui-fn-item.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.tui-fn-item.disabled:hover {
+  background: transparent;
+}
+
+.tui-fn-key {
+  background: var(--tui-fg);
+  color: var(--tui-bg);
+  padding: 0 0.5ch;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+}
+
+.tui-fn-label {
+  padding: 0 0.5ch;
+  color: var(--tui-fg-dim);
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+  font-size: 12px;
+}
+
+.tui-fn-item:hover .tui-fn-label {
+  color: var(--tui-fg);
+}
+
+/* Primary action highlight */
+.tui-fn-item.primary .tui-fn-key {
+  background: var(--tui-accent);
+  color: #fff;
+}
+
+.tui-fn-item.primary .tui-fn-label {
+  color: var(--tui-accent);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Status Line
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.tui-status-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 1ch;
+  background: var(--tui-fg);
+  color: var(--tui-bg);
+  min-height: 1.4em;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 0 2ch;
+}
+
+.tui-status-left {
+  display: flex;
+  gap: 1ch;
+  min-width: 0;
+  flex: 1;
+}
+
+.tui-status-right {
+  display: flex;
+  gap: 1ch;
+}
+
+.tui-status-msg {
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tui-file-path {
+  font-weight: normal;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.9;
+}
+
+.tui-status-hint {
+  opacity: 0.8;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Modal Dialogs (TUI style)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.tui-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.tui-modal {
+  background: var(--tui-bg);
+  border: 2px solid var(--tui-border);
+  padding: 0;
+  min-width: 40ch;
+  max-width: 80ch;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.tui-modal-title {
+  background: var(--tui-fg);
+  color: var(--tui-bg);
+  padding: 0 1ch;
+  font-weight: bold;
+  text-align: center;
+}
+
+.tui-modal-content {
+  padding: 1em 2ch;
+  overflow: auto;
+  flex: 1;
+}
+
+.tui-modal-actions {
+  display: flex;
+  justify-content: center;
+  gap: 2ch;
+  padding: 0.5em 1ch;
+  border-top: 1px solid var(--tui-border);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Buttons (TUI style)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.tui-btn {
+  background: var(--tui-bg);
+  color: var(--tui-fg);
+  border: 1px solid var(--tui-border);
+  padding: 0 2ch;
+  font-family: var(--tui-font);
+  font-size: var(--tui-font-size);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 1ch;
+  height: 1.8em;
+  transition: all 0.1s;
+}
+
+.tui-btn:hover {
+  background: var(--tui-highlight);
+  border-color: var(--tui-fg);
+}
+
+.tui-btn:active {
+  background: var(--tui-selection);
+}
+
+.tui-btn.primary {
+  background: var(--tui-fg);
+  color: var(--tui-bg);
+  border-color: var(--tui-fg);
+}
+
+.tui-btn.primary:hover {
+  background: var(--tui-fg-bright);
+}
+
+.tui-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.tui-btn-hotkey {
+  color: var(--tui-accent);
+  text-decoration: underline;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Diff View (TUI style)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.tui-diff-line {
+  font-family: var(--tui-font);
+  font-size: var(--tui-font-size);
+  padding: 0 1ch;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.tui-diff-add {
+  background: rgba(46, 125, 50, 0.12);
+  color: var(--tui-success);
+}
+
+.tui-diff-add::before {
+  content: "+ ";
+  color: var(--tui-success);
+}
+
+.tui-diff-remove {
+  background: rgba(197, 48, 48, 0.12);
+  color: var(--tui-error);
+  text-decoration: line-through;
+}
+
+.tui-diff-remove::before {
+  content: "- ";
+}
+
+/* Dark mode diff colors */
+.tui-dark .tui-diff-add {
+  background: rgba(51, 255, 51, 0.15);
+}
+
+.tui-dark .tui-diff-remove {
+  background: rgba(255, 51, 51, 0.15);
+}
+
+.tui-diff-context {
+  color: var(--tui-fg-dim);
+}
+
+.tui-diff-context::before {
+  content: "  ";
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Scrollbars (minimal, terminal-style)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+::-webkit-scrollbar {
+  width: 1ch;
+  height: 1ch;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--tui-bg);
+  border-left: 1px solid var(--tui-border);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--tui-fg-dim);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--tui-fg);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Responsive adjustments
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 600px) {
+  :root {
+    --tui-font-size: 13px;
+  }
+
+  .tui-title-bar {
+    font-size: 12px;
+  }
+
+  .tui-info-bar {
+    font-size: 11px;
+    padding: 4px 1ch;
+  }
+
+  .tui-status-hint {
+    display: none;
+  }
+
+  .tui-panel {
+    margin: 8px 2px 2px 2px;
+  }
+}
+
+/* Hide fn-bar completely */
+.tui-fn-bar {
+  display: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Diff Viewer Modal - TUI themed
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.diff-viewer-backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.diff-viewer-container {
+  background: var(--tui-bg);
+  border: 2px solid var(--tui-border);
+  border-radius: 0;
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.2);
+}
+
+.diff-viewer-header {
+  background: var(--tui-fg);
+  color: var(--tui-bg);
+  border-bottom: none;
+  padding: 4px 1ch;
+}
+
+.diff-viewer-header h2 {
+  font-size: var(--tui-font-size);
+  font-family: var(--tui-font);
+  font-weight: bold;
+}
+
+.diff-viewer-close {
+  background: transparent;
+  border: 1px solid var(--tui-bg);
+  color: var(--tui-bg);
+  border-radius: 0;
+  width: auto;
+  height: auto;
+  padding: 0 0.5ch;
+  font-size: 14px;
+}
+
+.diff-viewer-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.diff-viewer-content {
+  background: var(--tui-bg);
+  font-family: var(--tui-font);
+  font-size: var(--tui-font-size);
+  padding: 1ch;
+}
+
+.diff-line-add {
+  background: rgba(46, 125, 50, 0.15);
+  color: var(--tui-success);
+  border-radius: 0;
+}
+
+.diff-line-remove {
+  background: rgba(197, 48, 48, 0.15);
+  color: var(--tui-error);
+  border-radius: 0;
+}
+
+.diff-line-context {
+  color: var(--tui-fg-dim);
+}
+
+.diff-no-changes {
+  color: var(--tui-fg-dim);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Diagram Expand Button - TUI themed
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.diagram-expand-btn {
+  background: var(--tui-bg);
+  border: 1px solid var(--tui-border);
+  border-radius: 0;
+  color: var(--tui-fg);
+  font-family: var(--tui-font);
+  box-shadow: none;
+  opacity: 0.9;
+}
+
+.diagram-expand-btn:hover {
+  background: var(--tui-highlight);
+  border-color: var(--tui-fg);
+  transform: none;
+  opacity: 1;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Diagram Viewer Modal - TUI themed
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.diagram-viewer-backdrop {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.diagram-viewer-container {
+  background: var(--tui-bg);
+  border: 2px solid var(--tui-border);
+  border-radius: 0;
+}
+
+.diagram-viewer-content {
+  font-family: var(--tui-font);
+  color: var(--tui-fg);
+}
+
+.diagram-viewer-close {
+  background: var(--tui-bg);
+  border: 1px solid var(--tui-border);
+  border-radius: 0;
+  color: var(--tui-fg);
+}
+
+.diagram-viewer-close:hover {
+  background: var(--tui-highlight);
+  border-color: var(--tui-fg);
+}
+
+.diagram-viewer-zoom button {
+  background: var(--tui-bg);
+  border: 1px solid var(--tui-border);
+  border-radius: 0;
+  color: var(--tui-fg);
+}
+
+.diagram-viewer-zoom button:hover {
+  background: var(--tui-highlight);
+}
+
+.diagram-viewer-zoom-label {
+  background: var(--tui-bg);
+  border: 1px solid var(--tui-border);
+  border-radius: 0;
+  color: var(--tui-fg);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Undo/Redo Buttons - TUI themed
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.undo-redo-float {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 4px;
+  z-index: 10;
+}
+
+.undo-redo-btn {
+  width: auto;
+  height: auto;
+  padding: 2px 8px;
+  background: var(--tui-bg);
+  border: 1px solid var(--tui-border);
+  border-radius: 0;
+  color: var(--tui-fg);
+  font-size: 14px;
+  box-shadow: none;
+}
+
+.undo-redo-btn:not(:disabled):hover {
+  background: var(--tui-highlight);
+  border-color: var(--tui-fg);
+  transform: none;
+  box-shadow: none;
+}
+
+.undo-redo-btn:disabled {
+  opacity: 0.3;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Autosave Banner - TUI themed
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.editor-banner {
+  background: var(--tui-bg-panel);
+  border: 1px solid var(--tui-accent);
+  border-radius: 0;
+  color: var(--tui-fg);
+  padding: 6px 1ch;
+  font-size: 12px;
+}
+
+.editor-banner .button {
+  background: var(--tui-bg);
+  border: 1px solid var(--tui-border);
+  border-radius: 0;
+  color: var(--tui-fg);
+  font-family: var(--tui-font);
+  font-size: 11px;
+  padding: 2px 8px;
+  min-height: auto;
+}
+
+.editor-banner .button:hover {
+  background: var(--tui-highlight);
+  border-color: var(--tui-fg);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Badge (Approved status) - TUI themed
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.badge {
+  background: var(--tui-bg);
+  border: 1px solid var(--tui-border);
+  border-radius: 0;
+  color: var(--tui-fg);
+  font-family: var(--tui-font);
+  font-size: 11px;
+  padding: 2px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.badge.approved {
+  border-color: var(--tui-success);
+  color: var(--tui-success);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Generic Modal (Autosave diff) - TUI themed
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.modal-backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.modal {
+  background: var(--tui-bg);
+  border: 2px solid var(--tui-border);
+  border-radius: 0;
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.2);
+  padding: 0;
+}
+
+.modal .header {
+  background: var(--tui-fg);
+  color: var(--tui-bg);
+  padding: 4px 1ch;
+  margin: 0;
+}
+
+.modal .header h2 {
+  font-size: var(--tui-font-size);
+  font-family: var(--tui-font);
+  margin: 0;
+}
+
+.modal .header .button {
+  background: transparent;
+  border: 1px solid var(--tui-bg);
+  color: var(--tui-bg);
+  border-radius: 0;
+  padding: 2px 8px;
+  min-height: auto;
+}
+
+.modal .diff-line {
+  font-family: var(--tui-font);
+  font-size: var(--tui-font-size);
+}
+
+.modal .diff-add {
+  background: rgba(46, 125, 50, 0.15);
+  color: var(--tui-success);
+}
+
+.modal .diff-remove {
+  background: rgba(197, 48, 48, 0.15);
+  color: var(--tui-error);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Continue confirm panel - TUI override
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.continue-confirm-panel {
+  background: var(--tui-bg-panel);
+  border: 1px solid var(--tui-border);
+  border-radius: 0;
+  padding: 0.5em 1ch;
+  margin: 0.5em 1ch;
+}
+
+.continue-confirm-header {
+  color: var(--tui-fg);
+  font-size: var(--tui-font-size);
+}
+
+.continue-confirm-arrow {
+  color: var(--tui-fg-dim);
+}
+
+.continue-confirm-diff {
+  background: var(--tui-bg);
+  border: 1px solid var(--tui-border);
+  border-radius: 0;
+}
+
+.continue-confirm-diff .diff-line {
+  font-family: var(--tui-font);
+  font-size: var(--tui-font-size);
+}
+
+.continue-confirm-diff .diff-add {
+  background: rgba(51, 255, 51, 0.15);
+  color: var(--tui-success);
+}
+
+.continue-confirm-diff .diff-remove {
+  background: rgba(255, 51, 51, 0.15);
+  color: var(--tui-error);
+}
+
+.continue-confirm-message {
+  color: var(--tui-fg-dim);
+  font-size: var(--tui-font-size);
+}
+
+.continue-confirm-actions .button {
+  background: var(--tui-bg);
+  color: var(--tui-fg);
+  border: 1px solid var(--tui-border);
+  border-radius: 0;
+  font-family: var(--tui-font);
+  font-size: var(--tui-font-size);
+  padding: 0.25em 2ch;
+  min-height: auto;
+}
+
+.continue-confirm-actions .button:hover {
+  background: var(--tui-highlight);
+  border-color: var(--tui-fg);
+}
+
+.continue-confirm-actions .button.primary {
+  background: var(--tui-fg);
+  color: var(--tui-bg);
+}
+
+.continue-confirm-actions .button.secondary {
+  border-style: solid;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Undo/Redo buttons - TUI style
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.undo-redo-float {
+  position: fixed;
+  top: 3em;
+  right: 2ch;
+  display: flex;
+  gap: 1ch;
+  z-index: 50;
+}
+
+.undo-redo-btn {
+  width: auto;
+  height: auto;
+  padding: 0.25em 1ch;
+  background: var(--tui-bg);
+  border: 1px solid var(--tui-border);
+  border-radius: 0;
+  color: var(--tui-fg);
+  font-family: var(--tui-font);
+  font-size: var(--tui-font-size);
+  cursor: pointer;
+}
+
+.undo-redo-btn:hover {
+  background: var(--tui-highlight);
+  border-color: var(--tui-fg);
+}
+
+.undo-redo-btn:disabled {
+  opacity: 0.4;
+}
+
+/* Badge override */
+.badge {
+  background: var(--tui-bg);
+  border: 1px solid var(--tui-success);
+  border-radius: 0;
+  color: var(--tui-success);
+  padding: 0 1ch;
+  font-family: var(--tui-font);
+  font-size: var(--tui-font-size);
+  text-transform: uppercase;
+}
+
+/* Banner override */
+.editor-banner .button {
+  background: var(--tui-bg);
+  color: var(--tui-fg);
+  border: 1px solid var(--tui-border);
+  border-radius: 0;
+  font-family: var(--tui-font);
+  font-size: var(--tui-font-size);
+  padding: 0.25em 1ch;
+  min-height: auto;
+}
+
+.editor-banner .button:hover {
+  background: var(--tui-highlight);
+}

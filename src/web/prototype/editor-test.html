@@ -2,20 +2,133 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>PlanEditor Test</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <title>PL4N v0.1 - Plan Editor</title>
     <link rel="stylesheet" href="/assets/styles.css" />
+    <link rel="stylesheet" href="/assets/prototype/tui-styles.css" />
+    <style>
+      /* Inline critical overrides for immediate visual */
+      html, body { background: #f5f3ef; }
+    </style>
   </head>
   <body>
-    <div class="page">
-      <pl4n-editor
-        data-session="test-session"
-        data-token=""
-        data-turn="1"
-        data-phase="user_review"
-        data-read-only="false"
-      ></pl4n-editor>
+    <div class="tui-page">
+      <!-- Title Bar -->
+      <div class="tui-title-bar">
+        <span class="title">pl4n</span>
+        <span class="session-name">swift-river</span>
+        <span class="font-controls">
+          <button class="font-btn" id="font-down" title="Decrease font size">-</button>
+          <span class="font-size" id="font-size">13</span>
+          <button class="font-btn" id="font-up" title="Increase font size">+</button>
+        </span>
+        <span class="clock" id="clock">--:--:--</span>
+      </div>
+
+      <!-- Info Bar -->
+      <div class="tui-info-bar">
+        <div class="tui-info-item">
+          <span class="tui-info-label">TURN</span>
+          <span class="tui-info-value" id="info-turn">001</span>
+        </div>
+        <div class="tui-info-item">
+          <span class="tui-info-label">PHASE</span>
+          <span class="tui-info-value" id="info-phase">user review</span>
+        </div>
+        <div class="tui-info-item">
+          <span class="tui-info-label">STATUS</span>
+          <span class="tui-info-value status-ready" id="info-status">READY</span>
+        </div>
+      </div>
+
+      <!-- Main Editor Panel -->
+      <div class="tui-panel">
+        <span class="tui-panel-header">My Project Name</span>
+        <div class="tui-panel-content">
+          <pl4n-editor
+            data-session="test-session"
+            data-token=""
+            data-turn="1"
+            data-phase="user_review"
+            data-read-only="false"
+          ></pl4n-editor>
+        </div>
+      </div>
+
+      <!-- File Path Bar -->
+      <div class="tui-status-bar">
+        <div class="tui-status-left">
+          <span class="tui-file-path">.pl4n/sessions/swift-river/turns/001.md</span>
+        </div>
+        <div class="tui-status-right">
+          <span class="tui-status-hint">^S Save | ^Enter Continue</span>
+        </div>
+      </div>
     </div>
+
     <script type="module" src="/assets/editor.js"></script>
+    <script>
+      // Clock update
+      function updateClock() {
+        const now = new Date();
+        const h = String(now.getHours()).padStart(2, '0');
+        const m = String(now.getMinutes()).padStart(2, '0');
+        const s = String(now.getSeconds()).padStart(2, '0');
+        document.getElementById('clock').textContent = `${h}:${m}:${s}`;
+      }
+      updateClock();
+      setInterval(updateClock, 1000);
+
+      // Font size controls
+      let fontSize = 13;
+      const minFontSize = 4;
+      const maxFontSize = 24;
+
+      function updateFontSize(newSize) {
+        fontSize = Math.max(minFontSize, Math.min(maxFontSize, newSize));
+        document.documentElement.style.setProperty('--tui-font-size', fontSize + 'px');
+        document.getElementById('font-size').textContent = fontSize;
+      }
+
+      document.getElementById('font-up').addEventListener('click', () => updateFontSize(fontSize + 1));
+      document.getElementById('font-down').addEventListener('click', () => updateFontSize(fontSize - 1));
+
+      // Observe editor status changes to update info bar
+      const observer = new MutationObserver(() => {
+        const editor = document.querySelector('pl4n-editor');
+        if (!editor) return;
+
+        const statusEl = editor.querySelector('.status');
+        if (statusEl) {
+          const statusText = statusEl.textContent;
+          const infoStatus = document.getElementById('info-status');
+          infoStatus.className = 'tui-info-value';
+
+          if (statusText.includes('Working') || statusText.includes('Saving')) {
+            infoStatus.classList.add('status-working');
+            infoStatus.textContent = 'WORKING';
+          } else if (statusText.includes('failed') || statusText.includes('error')) {
+            infoStatus.classList.add('status-error');
+            infoStatus.textContent = 'ERROR';
+          } else if (statusText.includes('Unsaved')) {
+            infoStatus.classList.add('status-working');
+            infoStatus.textContent = 'MODIFIED';
+          } else {
+            infoStatus.classList.add('status-ready');
+            infoStatus.textContent = 'READY';
+          }
+        }
+      });
+
+      // Start observing once editor is ready
+      requestAnimationFrame(function check() {
+        const editor = document.querySelector('pl4n-editor');
+        if (editor) {
+          observer.observe(editor, { childList: true, subtree: true, characterData: true });
+        } else {
+          requestAnimationFrame(check);
+        }
+      });
+    </script>
   </body>
 </html>
