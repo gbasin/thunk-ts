@@ -9,6 +9,8 @@ import { ensureGlobalToken } from "./server/auth";
 import { isDaemonRunning, startDaemon, stopDaemon } from "./server/daemon";
 import { startServer } from "./server/index";
 import { findAvailablePort, getLocalIP } from "./server/network";
+import { resolveServerConfig } from "./server/config";
+import { createProjectId } from "./server/project-id";
 
 type TurnOrchestratorInstance = {
   runTurn(sessionId: string): Promise<boolean>;
@@ -53,6 +55,13 @@ function resolveEnvPort(): number | undefined {
   }
   const parsed = Number(value);
   return Number.isNaN(parsed) ? undefined : parsed;
+}
+
+function resolveDisplayHost(bind?: string): string {
+  if (bind && bind !== "0.0.0.0" && bind !== "::") {
+    return bind;
+  }
+  return getLocalIP();
 }
 
 function extractGlobalOptions(argv: string[]): {
@@ -145,17 +154,24 @@ async function attachEditUrl(
     return;
   }
   try {
-    let status = await deps.isDaemonRunning(manager.pl4nDir);
+    const projectRoot = path.dirname(path.resolve(manager.pl4nDir));
+    const projectId = createProjectId(projectRoot);
+    const serverConfig = await resolveServerConfig({ cwd: projectRoot });
+    let status = await deps.isDaemonRunning(serverConfig.globalDir);
     if (!status.running) {
-      const started = await deps.startDaemon(manager.pl4nDir);
-      status = { running: true, port: started.port, pid: started.pid };
+      const daemonOptions =
+        serverConfig.workspaceSource === "config"
+          ? { bind: serverConfig.bind }
+          : { bind: serverConfig.bind, workspace: serverConfig.workspaces[0] };
+      const started = await deps.startDaemon(serverConfig.globalDir, daemonOptions);
+      status = { running: true, port: started.port, pid: started.pid, bind: serverConfig.bind };
     }
     if (!status.port) {
       return;
     }
     const token = await manager.ensureSessionToken(sessionId);
-    const host = getLocalIP();
-    const url = `http://${host}:${status.port}/edit/${sessionId}?t=${token}`;
+    const host = resolveDisplayHost(status.bind ?? serverConfig.bind);
+    const url = `http://${host}:${status.port}/projects/${projectId}/edit/${sessionId}?t=${token}`;
     try {
       await deps.writeClipboard(url);
     } catch {
@@ -373,37 +389,64 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
     .command("server [action]")
     .describe("Manage the web editor server")
     .option("--foreground", "Run server in foreground")
+    .option("--workspace <path>", "Workspace root to scan for projects")
+    .option("--bind <host>", "Bind address for the server")
     .action(async (action: string | undefined, opts: Record<string, unknown>) => {
-      const manager = new SessionManager(resolvePl4nDir(opts, globalOptions.pl4nDir));
       const pretty = resolvePretty(opts, globalOptions.pretty);
       const mode = (action ?? "status").toLowerCase();
       const portOverride = resolveEnvPort();
+      const workspace = (opts.workspace as string | undefined) ?? (opts["workspace"] as string);
+      const bind = (opts.bind as string | undefined) ?? (opts["bind"] as string);
+      const legacyPl4nDir = resolvePl4nDir(opts, globalOptions.pl4nDir);
+      const serverConfig = await resolveServerConfig({
+        workspace,
+        bind,
+        port: portOverride,
+        cwd: process.cwd(),
+      });
 
       if (mode === "start") {
         if (opts.foreground) {
-          const running = await deps.isDaemonRunning(manager.pl4nDir);
+          const running = await deps.isDaemonRunning(serverConfig.globalDir);
           if (running.running) {
             exitWithError({ error: "Server already running" }, pretty);
           }
-          const portStart = portOverride ?? 3456;
+          const portStart = serverConfig.port ?? 3456;
           const port = await deps.findAvailablePort(portStart);
-          const token = await ensureGlobalToken(manager.pl4nDir);
-          const url = `http://${getLocalIP()}:${port}/list?t=${token}`;
+          const token = await ensureGlobalToken(serverConfig.globalDir, legacyPl4nDir);
+          const host = resolveDisplayHost(serverConfig.bind);
+          const url = `http://${host}:${port}/projects?t=${token}`;
           outputJson({ running: true, foreground: true, port, url }, pretty);
-          await deps.startServer({ pl4nDir: manager.pl4nDir, port });
+          await deps.startServer({
+            globalDir: serverConfig.globalDir,
+            workspaces: serverConfig.workspaces,
+            bind: serverConfig.bind,
+            port,
+          });
           return;
         }
 
-        let status = await deps.isDaemonRunning(manager.pl4nDir);
+        let status = await deps.isDaemonRunning(serverConfig.globalDir);
         if (!status.running) {
-          const started = await deps.startDaemon(
-            manager.pl4nDir,
-            portOverride === undefined ? {} : { port: portOverride },
-          );
-          status = { running: true, port: started.port, pid: started.pid };
+          const daemonOptions =
+            serverConfig.workspaceSource === "config"
+              ? { bind: serverConfig.bind }
+              : { bind: serverConfig.bind, workspace: serverConfig.workspaces[0] };
+          const resolvedPort = portOverride ?? serverConfig.port;
+          const started = await deps.startDaemon(serverConfig.globalDir, {
+            ...daemonOptions,
+            ...(resolvedPort === undefined ? {} : { port: resolvedPort }),
+          });
+          status = {
+            running: true,
+            port: started.port,
+            pid: started.pid,
+            bind: serverConfig.bind,
+          };
         }
-        const token = await ensureGlobalToken(manager.pl4nDir);
-        const url = status.port ? `http://${getLocalIP()}:${status.port}/list?t=${token}` : null;
+        const token = await ensureGlobalToken(serverConfig.globalDir, legacyPl4nDir);
+        const host = resolveDisplayHost(status.bind ?? serverConfig.bind);
+        const url = status.port ? `http://${host}:${status.port}/projects?t=${token}` : null;
         outputJson(
           {
             running: true,
@@ -417,7 +460,7 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
       }
 
       if (mode === "stop") {
-        const stopped = await deps.stopDaemon(manager.pl4nDir);
+        const stopped = await deps.stopDaemon(serverConfig.globalDir);
         if (!stopped) {
           exitWithError({ error: "Server not running" }, pretty);
         }
@@ -426,13 +469,14 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
       }
 
       if (mode === "status") {
-        const status = await deps.isDaemonRunning(manager.pl4nDir);
+        const status = await deps.isDaemonRunning(serverConfig.globalDir);
         if (!status.running) {
           outputJson({ running: false }, pretty);
           return;
         }
-        const token = await ensureGlobalToken(manager.pl4nDir);
-        const url = status.port ? `http://${getLocalIP()}:${status.port}/list?t=${token}` : null;
+        const token = await ensureGlobalToken(serverConfig.globalDir, legacyPl4nDir);
+        const host = resolveDisplayHost(status.bind ?? serverConfig.bind);
+        const url = status.port ? `http://${host}:${status.port}/projects?t=${token}` : null;
         outputJson(
           {
             running: true,

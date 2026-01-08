@@ -20,6 +20,46 @@ export function isDiagram(content: string): boolean {
   return DIAGRAM_CHARS.test(content);
 }
 
+// GFM pipe table regex - matches header row, separator row, and data rows
+// Separator row contains only |, -, :, and whitespace
+const TABLE_REGEX = /^\|.+\|\s*\n\|[\s:|-]+\|\s*\n(\|.+\|\s*\n?)+$/;
+
+/**
+ * Check if text is a GFM pipe table
+ */
+export function isTable(content: string): boolean {
+  return TABLE_REGEX.test(content.trim());
+}
+
+/**
+ * Parse a GFM pipe table into headers and rows
+ */
+export function parseGFMTable(content: string): { headers: string[]; rows: string[][] } {
+  const lines = content.trim().split("\n");
+  const headers = lines[0]
+    .split("|")
+    .slice(1, -1)
+    .map((s) => s.trim());
+  // Skip separator line (lines[1])
+  const rows = lines.slice(2).map((line) =>
+    line
+      .split("|")
+      .slice(1, -1)
+      .map((s) => s.trim()),
+  );
+  return { headers, rows };
+}
+
+/**
+ * Serialize headers and rows back to GFM pipe table format
+ */
+export function serializeGFMTable(headers: string[], rows: string[][]): string {
+  const headerLine = "| " + headers.join(" | ") + " |";
+  const separator = "| " + headers.map(() => "---").join(" | ") + " |";
+  const dataLines = rows.map((row) => "| " + row.join(" | ") + " |");
+  return [headerLine, separator, ...dataLines].join("\n");
+}
+
 const nodes: Record<string, NodeSpec> = {
   doc: {
     content: "block+",
@@ -91,6 +131,18 @@ const nodes: Record<string, NodeSpec> = {
     },
   },
 
+  table: {
+    group: "block",
+    attrs: {
+      headers: { default: [] as string[] },
+      rows: { default: [] as string[][] },
+    },
+    atom: true, // Single unit for selection
+    toDOM() {
+      return ["div", { class: "table-wrapper" }, 0];
+    },
+  },
+
   text: {
     group: "inline",
   },
@@ -121,9 +173,11 @@ export function parseMarkdown(text: string): ReturnType<typeof schema.node> {
     return nodes.length > 0 ? nodes : null;
   };
   const blocks: Array<{
-    type: "paragraph" | "code_block" | "diagram";
+    type: "paragraph" | "code_block" | "diagram" | "table";
     content: string;
     language?: string;
+    headers?: string[];
+    rows?: string[][];
   }> = [];
 
   // Split by code blocks
@@ -139,7 +193,12 @@ export function parseMarkdown(text: string): ReturnType<typeof schema.node> {
       const paragraphs = before.split(/\n\n+/);
       for (const p of paragraphs) {
         if (p.trim()) {
-          blocks.push({ type: "paragraph", content: p.trim() });
+          if (isTable(p.trim())) {
+            const { headers, rows } = parseGFMTable(p.trim());
+            blocks.push({ type: "table", content: p.trim(), headers, rows });
+          } else {
+            blocks.push({ type: "paragraph", content: p.trim() });
+          }
         }
       }
     }
@@ -164,7 +223,12 @@ export function parseMarkdown(text: string): ReturnType<typeof schema.node> {
     const paragraphs = after.split(/\n\n+/);
     for (const p of paragraphs) {
       if (p.trim()) {
-        blocks.push({ type: "paragraph", content: p.trim() });
+        if (isTable(p.trim())) {
+          const { headers, rows } = parseGFMTable(p.trim());
+          blocks.push({ type: "table", content: p.trim(), headers, rows });
+        } else {
+          blocks.push({ type: "paragraph", content: p.trim() });
+        }
       }
     }
   }
@@ -180,6 +244,11 @@ export function parseMarkdown(text: string): ReturnType<typeof schema.node> {
       return schema.nodes.paragraph.create(null, buildInlineContent(block.content));
     } else if (block.type === "diagram") {
       return schema.nodes.diagram.create(null, block.content ? schema.text(block.content) : null);
+    } else if (block.type === "table") {
+      return schema.nodes.table.create({
+        headers: block.headers || [],
+        rows: block.rows || [],
+      });
     } else {
       return schema.nodes.code_block.create(
         { language: block.language || "" },
@@ -223,6 +292,11 @@ export function serializeMarkdown(doc: ReturnType<typeof schema.node>): string {
       parts.push(node.textContent);
       parts.push("```");
       parts.push(""); // Empty line after diagram
+    } else if (node.type.name === "table") {
+      const headers = node.attrs.headers as string[];
+      const rows = node.attrs.rows as string[][];
+      parts.push(serializeGFMTable(headers, rows));
+      parts.push(""); // Empty line after table
     }
   });
 

@@ -175,9 +175,13 @@ export class SessionManager {
       if (!entry.isDirectory()) {
         continue;
       }
-      const session = await this.loadSession(entry.name);
-      if (session) {
-        sessions.push(session);
+      try {
+        const session = await this.loadSession(entry.name);
+        if (session) {
+          sessions.push(session);
+        }
+      } catch {
+        // ignore invalid/missing session data
       }
     }
 

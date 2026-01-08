@@ -1,6 +1,7 @@
 import { LitElement, html } from "lit";
 import * as Diff from "diff";
 import { PlanEditor } from "./plan-editor.js";
+import { type ActivityEvent, formatActivity, openActivityStream } from "./notifications.js";
 
 type Change = Diff.Change;
 
@@ -19,6 +20,9 @@ class Pl4nEditor extends LitElement {
       attribute: "data-read-only",
       converter: (value: string | null) => value === "true",
     },
+    projectId: { type: String, attribute: "data-project-id" },
+    projectName: { type: String, attribute: "data-project-name" },
+    globalToken: { type: String, attribute: "data-global-token" },
   };
 
   declare session: string;
@@ -26,6 +30,9 @@ class Pl4nEditor extends LitElement {
   declare turn: number;
   declare phase: string;
   declare readOnly: boolean;
+  declare projectId: string;
+  declare projectName: string;
+  declare globalToken: string;
 
   private editor: PlanEditor | null = null;
   private mtime = 0;
@@ -42,6 +49,8 @@ class Pl4nEditor extends LitElement {
   private snapshotContent: string | null = null;
   private showContinueConfirm = false;
   private continueConfirmExpanded = false;
+  private activity: ActivityEvent[] = [];
+  private eventSource: EventSource | null = null;
 
   createRenderRoot() {
     return this;
@@ -51,6 +60,17 @@ class Pl4nEditor extends LitElement {
     super.connectedCallback();
     window.addEventListener("beforeunload", this.handleBeforeUnload);
     window.addEventListener("keydown", this.handleKeyDown);
+    this.eventSource = openActivityStream(
+      this.globalToken,
+      (events) => {
+        this.activity = events;
+        this.requestUpdate();
+      },
+      (event) => {
+        this.activity = [event, ...this.activity].slice(0, 4);
+        this.requestUpdate();
+      },
+    );
   }
 
   disconnectedCallback() {
@@ -62,6 +82,8 @@ class Pl4nEditor extends LitElement {
       this.pollTimer = null;
     }
     this.editor?.destroy();
+    this.eventSource?.close();
+    this.eventSource = null;
   }
 
   firstUpdated() {
@@ -141,11 +163,14 @@ class Pl4nEditor extends LitElement {
     }
     const content = this.editor.getValue();
     try {
-      const response = await fetch(`/api/autosave/${this.session}?t=${this.token}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
-      });
+      const response = await fetch(
+        `/api/projects/${this.projectId}/autosave/${this.session}?t=${this.token}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content }),
+        },
+      );
       if (!response.ok) {
         throw new Error("Autosave failed");
       }
@@ -161,9 +186,12 @@ class Pl4nEditor extends LitElement {
 
   private async discardAutosave() {
     try {
-      const response = await fetch(`/api/autosave/${this.session}?t=${this.token}`, {
-        method: "DELETE",
-      });
+      const response = await fetch(
+        `/api/projects/${this.projectId}/autosave/${this.session}?t=${this.token}`,
+        {
+          method: "DELETE",
+        },
+      );
       if (!response.ok) {
         throw new Error("Autosave discard failed");
       }
@@ -190,7 +218,9 @@ class Pl4nEditor extends LitElement {
 
   private async loadContent() {
     try {
-      const response = await fetch(`/api/content/${this.session}?t=${this.token}`);
+      const response = await fetch(
+        `/api/projects/${this.projectId}/content/${this.session}?t=${this.token}`,
+      );
       if (!response.ok) {
         // Use test content for development/testing when API unavailable
         if (this.session === "test-session") {
@@ -305,11 +335,14 @@ Try editing this text to see the diff highlighting in action!`;
     this.requestUpdate();
     try {
       const content = this.editor.getValue();
-      const response = await fetch(`/api/save/${this.session}?t=${this.token}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, mtime: this.mtime }),
-      });
+      const response = await fetch(
+        `/api/projects/${this.projectId}/save/${this.session}?t=${this.token}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content, mtime: this.mtime }),
+        },
+      );
       if (response.status === 409) {
         const payload = (await response.json()) as { mtime?: number };
         if (payload.mtime) {
@@ -387,11 +420,14 @@ Try editing this text to see the diff highlighting in action!`;
 
     try {
       const content = this.editor.getValue();
-      const response = await fetch(`/api/continue/${this.session}?t=${this.token}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, mtime: this.mtime }),
-      });
+      const response = await fetch(
+        `/api/projects/${this.projectId}/continue/${this.session}?t=${this.token}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content, mtime: this.mtime }),
+        },
+      );
       if (response.status === 409) {
         const payload = (await response.json()) as { mtime?: number };
         if (payload.mtime) {
@@ -430,9 +466,12 @@ Try editing this text to see the diff highlighting in action!`;
     this.statusMessage = "Approving plan...";
     this.requestUpdate();
     try {
-      const response = await fetch(`/api/approve/${this.session}?t=${this.token}`, {
-        method: "POST",
-      });
+      const response = await fetch(
+        `/api/projects/${this.projectId}/approve/${this.session}?t=${this.token}`,
+        {
+          method: "POST",
+        },
+      );
       if (response.status === 400) {
         this.statusMessage = "Cannot approve: unanswered questions";
         this.requestUpdate();
@@ -465,7 +504,9 @@ Try editing this text to see the diff highlighting in action!`;
     }
     this.pollTimer = window.setInterval(async () => {
       try {
-        const response = await fetch(`/api/status/${this.session}?t=${this.token}`);
+        const response = await fetch(
+          `/api/projects/${this.projectId}/status/${this.session}?t=${this.token}`,
+        );
         if (!response.ok) {
           return;
         }
@@ -647,10 +688,18 @@ Try editing this text to see the diff highlighting in action!`;
 
   render() {
     const approved = this.phase === "approved";
+    const sessionsLink = this.globalToken
+      ? `/projects/${this.projectId}/sessions?t=${this.globalToken}`
+      : `/projects/${this.projectId}/sessions`;
     return html`
       <div class="card editor-shell">
         <div class="header">
           <div class="header-title">
+            <div class="breadcrumb">
+              <a href=${sessionsLink}>${this.projectName}</a>
+              <span>›</span>
+              <span>${this.session}</span>
+            </div>
             <h1>${this.session}</h1>
             <div class="header-meta">Turn ${this.turn} - ${formatPhase(this.phase)}</div>
           </div>
@@ -659,6 +708,7 @@ Try editing this text to see the diff highlighting in action!`;
             ${approved ? html`<span class="badge approved">Approved</span>` : html``}
           </div>
         </div>
+        ${this.renderActivityBar()}
 
         ${
           this.hasAutosave
@@ -722,6 +772,34 @@ Try editing this text to see the diff highlighting in action!`;
         <button class="undo-redo-btn" @click=${() => this.redo()} title="Redo (Cmd+Shift+Z)">
           ↷
         </button>
+      </div>
+    `;
+  }
+
+  private renderActivityBar() {
+    if (this.activity.length === 0) {
+      return null;
+    }
+    return html`
+      <div class="activity-bar">
+        <div class="activity-title">Live activity</div>
+        <div class="activity-items">
+          ${this.activity.slice(0, 3).map(
+            (event) => html`
+              <a
+                class="activity-item"
+                href=${
+                  this.globalToken
+                    ? `/projects/${event.project_id}/sessions?t=${this.globalToken}`
+                    : "/projects"
+                }
+              >
+                <span class="activity-dot ${event.action}"></span>
+                <span>${formatActivity(event)}</span>
+              </a>
+            `,
+          )}
+        </div>
       </div>
     `;
   }

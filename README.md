@@ -56,6 +56,8 @@ pl4n server start        # start daemon
 pl4n server stop         # stop daemon
 pl4n server status       # check running status
 pl4n server start --foreground  # run in foreground (dev)
+pl4n server start --workspace /path/to/root  # scan a specific workspace
+pl4n server start --bind 127.0.0.1           # bind address
 ```
 
 For remote access (Tailscale/VPN), override the host used in URLs:
@@ -68,6 +70,20 @@ Troubleshooting:
 - If the browser cannot connect, check local firewall settings and that the port is reachable.
 - If port 3456 (or `PL4N_PORT`) is taken, the server will try the next available port.
 - Clipboard copy is best-effort; the URL is always printed in JSON output.
+
+Server configuration lives in `~/.pl4n/config.yaml`:
+
+```yaml
+workspaces:
+  - /Users/you/code
+  - /Users/you/work
+bind: 0.0.0.0
+port: 3456
+```
+
+You can also set a single workspace via `PL4N_WORKSPACE=/path/to/root`.
+
+The server UI starts at `/projects` and links to project-scoped session lists and editors.
 
 ## How It Works
 
@@ -148,6 +164,16 @@ When you edit `turns/001.md` and call `continue`, agents receive your changes as
         │   └── synthesizer.log
         │
         └── PLAN.md                   # Symlink to approved turn
+```
+
+Global server state:
+
+```
+~/.pl4n/
+├── config.yaml                       # Server config (workspaces, bind, port)
+├── token                             # Global auth token for the web UI
+├── server.json                       # PID/port metadata for the daemon
+└── server.log                        # Server logs
 ```
 
 **Key points:**

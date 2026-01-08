@@ -6,8 +6,11 @@ import { describe, expect, it } from "bun:test";
 import type { CliDeps } from "../src/cli";
 import { type Pl4nConfig } from "../src/models";
 import { SessionManager } from "../src/session";
+import { createProjectId } from "../src/server/project-id";
 
-let daemonStatus: { running: boolean; port?: number; pid?: number } = { running: false };
+let daemonStatus: { running: boolean; port?: number; pid?: number; bind?: string } = {
+  running: false,
+};
 let startServerCalls: Array<unknown> = [];
 let clipboardWrites: string[] = [];
 let runTurnHandler: (manager: SessionManager, sessionId: string) => Promise<boolean> = async () =>
@@ -45,6 +48,13 @@ async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }
+}
+
+function requireValue<T>(value: T | null | undefined, message: string): NonNullable<T> {
+  if (value === null || value === undefined) {
+    throw new Error(message);
+  }
+  return value;
 }
 
 async function runCliCommandCapture(
@@ -128,7 +138,8 @@ describe("CLI (mocked dependencies)", () => {
         ]);
 
         const data = JSON.parse(logs[0]) as { edit_url?: string };
-        const expected = `http://127.0.0.1:9000/edit/${state.sessionId}?t=${state.sessionToken}`;
+        const projectId = createProjectId(path.dirname(pl4nDir));
+        const expected = `http://127.0.0.1:9000/projects/${projectId}/edit/${state.sessionId}?t=${state.sessionToken}`;
         expect(data.edit_url).toBe(expected);
         expect(clipboardWrites).toEqual([expected]);
       } finally {
@@ -260,6 +271,72 @@ describe("CLI (mocked dependencies)", () => {
           delete process.env.PL4N_PORT;
         } else {
           process.env.PL4N_PORT = originalPort;
+        }
+      }
+    });
+  });
+
+  it("server start daemon uses config port when no override", async () => {
+    await withTempDir(async (root) => {
+      const pl4nDir = path.join(root, ".pl4n-test");
+      const pl4nHome = path.join(root, "pl4n-home");
+      const workspace = path.join(root, "workspace");
+      await fs.mkdir(pl4nHome, { recursive: true });
+      await fs.writeFile(
+        path.join(pl4nHome, "config.yaml"),
+        `workspaces:\n  - ${workspace}\nport: 9876\n`,
+        "utf8",
+      );
+
+      daemonStatus = { running: false };
+      clipboardWrites = [];
+      startServerCalls = [];
+      runTurnHandler = async () => true;
+
+      const originalHome = process.env.PL4N_HOME;
+      const originalPort = process.env.PL4N_PORT;
+      const originalWorkspace = process.env.PL4N_WORKSPACE;
+      process.env.PL4N_HOME = pl4nHome;
+      delete process.env.PL4N_PORT;
+      delete process.env.PL4N_WORKSPACE;
+
+      try {
+        let captured: { globalDir: string; options: Record<string, unknown> } | null = null;
+        const logs = await runCliCommandCapture(
+          ["node", "pl4n", "--pl4n-dir", pl4nDir, "server", "start"],
+          {
+            ...cliDeps,
+            startDaemon: async (globalDir, options) => {
+              captured = { globalDir, options: options ?? {} };
+              return { pid: 123, port: 9876 };
+            },
+          },
+        );
+
+        const data = JSON.parse(logs[0]) as { running: boolean; port?: number };
+        expect(data.running).toBe(true);
+        expect(data.port).toBe(9876);
+        const capturedValue = requireValue<{
+          globalDir: string;
+          options: Record<string, unknown>;
+        }>(captured, "startDaemon was not called");
+        expect(capturedValue.globalDir).toBe(pl4nHome);
+        expect(capturedValue.options.port).toBe(9876);
+      } finally {
+        if (originalHome === undefined) {
+          delete process.env.PL4N_HOME;
+        } else {
+          process.env.PL4N_HOME = originalHome;
+        }
+        if (originalPort === undefined) {
+          delete process.env.PL4N_PORT;
+        } else {
+          process.env.PL4N_PORT = originalPort;
+        }
+        if (originalWorkspace === undefined) {
+          delete process.env.PL4N_WORKSPACE;
+        } else {
+          process.env.PL4N_WORKSPACE = originalWorkspace;
         }
       }
     });

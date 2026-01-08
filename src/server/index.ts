@@ -1,16 +1,18 @@
 import { promises as fs } from "fs";
 import path from "path";
 
-import { SessionManager } from "../session";
 import { createHandlers } from "./handlers";
 import { findAvailablePort } from "./network";
+import { ProjectRegistry } from "./projects";
+import { createSseManager } from "./sse";
+import { resolveServerConfig } from "./config";
 
 type ServerStart = {
-  pl4nDir: string;
+  workspaces: string[];
   port: number;
+  bind: string;
+  globalDir: string;
 };
-
-const IDLE_CHECK_MS = 60 * 60 * 1000;
 
 export function parsePortArg(argv: string[]): number | null {
   const index = argv.findIndex((arg) => arg === "--port");
@@ -30,134 +32,115 @@ export function parsePortArg(argv: string[]): number | null {
   return null;
 }
 
-export async function resolvePl4nDir(): Promise<string> {
-  const envDir = process.env.PL4N_DIR;
-  if (envDir) {
-    return envDir;
-  }
-
-  let current = process.cwd();
-  while (true) {
-    const candidate = path.join(current, ".pl4n");
-    try {
-      const stat = await fs.stat(candidate);
-      if (stat.isDirectory()) {
-        return candidate;
-      }
-    } catch {
-      // continue
-    }
-
-    const parent = path.dirname(current);
-    if (parent === current) {
-      break;
-    }
-    current = parent;
-  }
-
-  return path.join(process.cwd(), ".pl4n");
-}
-
-async function ensureServerInfo(pl4nDir: string, port: number): Promise<void> {
-  const infoPath = path.join(pl4nDir, "server.json");
+async function ensureServerInfo(globalDir: string, port: number, bind: string): Promise<void> {
+  const infoPath = path.join(globalDir, "server.json");
   const now = new Date().toISOString();
   const info = {
     pid: process.pid,
     port,
+    bind,
     started_at: now,
     last_activity: now,
   };
-  await fs.mkdir(pl4nDir, { recursive: true });
+  await fs.mkdir(globalDir, { recursive: true });
   await fs.writeFile(infoPath, `${JSON.stringify(info)}\n`, "utf8");
 }
 
 export async function startServer(opts?: Partial<ServerStart>): Promise<void> {
-  const pl4nDir = opts?.pl4nDir ?? (await resolvePl4nDir());
-  const port = opts?.port ?? (await findAvailablePort(3456));
+  const resolved = await resolveServerConfig({ cwd: process.cwd() });
+  const globalDir = opts?.globalDir ?? resolved.globalDir;
+  const workspaces = opts?.workspaces ?? resolved.workspaces;
+  const bind = opts?.bind ?? resolved.bind;
+  const port = opts?.port ?? (await findAvailablePort(resolved.port ?? 3456));
 
-  await ensureServerInfo(pl4nDir, port);
+  await ensureServerInfo(globalDir, port, bind);
 
-  const manager = new SessionManager(pl4nDir);
-  const handlers = createHandlers({ pl4nDir, manager });
+  const registry = new ProjectRegistry({ workspaces });
+  await registry.start();
+  const sse = createSseManager(registry);
+  const handlers = createHandlers({ globalDir, registry, sse });
 
   const server = Bun.serve({
     port,
-    hostname: "0.0.0.0",
+    hostname: bind,
     fetch: async (req) => {
       const url = new URL(req.url);
       const pathname = url.pathname;
+      const segments = pathname.split("/").filter(Boolean);
 
-      if (pathname === "/list") {
-        return await handlers.handleList(req);
+      if (pathname === "/") {
+        return new Response(null, {
+          status: 302,
+          headers: { Location: `/projects${url.search}` },
+        });
       }
 
-      if (pathname.startsWith("/edit/")) {
-        const sessionId = pathname.split("/")[2];
-        if (!sessionId) {
-          return new Response("Not Found", { status: 404 });
+      if (segments[0] === "projects") {
+        if (segments.length === 1) {
+          return await handlers.handleProjectsPage(req);
         }
-        return await handlers.handleEdit(req, sessionId);
+        const projectId = segments[1];
+        if (segments[2] === "sessions" && segments.length === 3) {
+          return await handlers.handleProjectSessionsPage(req, projectId);
+        }
+        if (segments[2] === "edit" && segments.length === 4) {
+          const sessionId = segments[3];
+          return await handlers.handleEdit(req, projectId, sessionId);
+        }
+        return new Response("Not Found", { status: 404 });
       }
 
-      if (pathname.startsWith("/api/content/")) {
-        const sessionId = pathname.split("/")[3];
-        if (!sessionId) {
-          return new Response("Not Found", { status: 404 });
+      if (segments[0] === "api") {
+        if (segments[1] === "projects") {
+          if (segments.length === 2) {
+            return await handlers.handleProjects(req);
+          }
+          const projectId = segments[2];
+          if (segments[3] === "sessions" && segments.length === 4) {
+            return await handlers.handleProjectSessions(req, projectId);
+          }
+          if (segments[3] === "content" && segments.length === 5) {
+            return await handlers.handleGetContent(req, projectId, segments[4]);
+          }
+          if (segments[3] === "save" && segments.length === 5) {
+            if (req.method !== "POST") {
+              return new Response("Method Not Allowed", { status: 405 });
+            }
+            return await handlers.handleSave(req, projectId, segments[4]);
+          }
+          if (segments[3] === "autosave" && segments.length === 5) {
+            if (req.method !== "POST" && req.method !== "DELETE") {
+              return new Response("Method Not Allowed", { status: 405 });
+            }
+            return await handlers.handleAutosave(req, projectId, segments[4]);
+          }
+          if (segments[3] === "continue" && segments.length === 5) {
+            if (req.method !== "POST") {
+              return new Response("Method Not Allowed", { status: 405 });
+            }
+            return await handlers.handleContinue(req, projectId, segments[4]);
+          }
+          if (segments[3] === "status" && segments.length === 5) {
+            return await handlers.handleStatus(req, projectId, segments[4]);
+          }
+          if (segments[3] === "approve" && segments.length === 5) {
+            if (req.method !== "POST") {
+              return new Response("Method Not Allowed", { status: 405 });
+            }
+            return await handlers.handleApprove(req, projectId, segments[4]);
+          }
         }
-        return await handlers.handleGetContent(req, sessionId);
+
+        if (segments[1] === "activity" && segments.length === 2) {
+          return await handlers.handleActivity(req);
+        }
+        if (segments[1] === "events" && segments.length === 2) {
+          return await handlers.handleEvents(req);
+        }
       }
 
-      if (pathname.startsWith("/api/save/")) {
-        if (req.method !== "POST") {
-          return new Response("Method Not Allowed", { status: 405 });
-        }
-        const sessionId = pathname.split("/")[3];
-        if (!sessionId) {
-          return new Response("Not Found", { status: 404 });
-        }
-        return await handlers.handleSave(req, sessionId);
-      }
-
-      if (pathname.startsWith("/api/autosave/")) {
-        if (req.method !== "POST" && req.method !== "DELETE") {
-          return new Response("Method Not Allowed", { status: 405 });
-        }
-        const sessionId = pathname.split("/")[3];
-        if (!sessionId) {
-          return new Response("Not Found", { status: 404 });
-        }
-        return await handlers.handleAutosave(req, sessionId);
-      }
-
-      if (pathname.startsWith("/api/continue/")) {
-        if (req.method !== "POST") {
-          return new Response("Method Not Allowed", { status: 405 });
-        }
-        const sessionId = pathname.split("/")[3];
-        if (!sessionId) {
-          return new Response("Not Found", { status: 404 });
-        }
-        return await handlers.handleContinue(req, sessionId);
-      }
-
-      if (pathname.startsWith("/api/status/")) {
-        const sessionId = pathname.split("/")[3];
-        if (!sessionId) {
-          return new Response("Not Found", { status: 404 });
-        }
-        return await handlers.handleStatus(req, sessionId);
-      }
-
-      if (pathname.startsWith("/api/approve/")) {
-        const sessionId = pathname.split("/")[3];
-        if (!sessionId) {
-          return new Response("Not Found", { status: 404 });
-        }
-        return await handlers.handleApprove(req, sessionId);
-      }
-
-      if (pathname.startsWith("/assets/")) {
-        const assetPath = pathname.replace("/assets/", "");
+      if (segments[0] === "assets") {
+        const assetPath = segments.slice(1).join("/");
         return await handlers.handleAssets(req, assetPath);
       }
 
@@ -171,21 +154,14 @@ export async function startServer(opts?: Partial<ServerStart>): Promise<void> {
   });
 
   const shutdown = async () => {
+    await registry.stop();
+    sse.close();
     await server.stop(true);
-    await fs.rm(path.join(pl4nDir, "server.json"), { force: true });
+    await fs.rm(path.join(globalDir, "server.json"), { force: true });
     resolveStop?.();
   };
 
-  const timer = setInterval(async () => {
-    if (await handlers.handleIdleCheck()) {
-      clearInterval(timer);
-      await shutdown();
-    }
-  }, IDLE_CHECK_MS);
-  timer.unref?.();
-
   const handleSignal = async () => {
-    clearInterval(timer);
     await shutdown();
   };
   process.on("SIGTERM", handleSignal);
@@ -196,8 +172,13 @@ export async function startServer(opts?: Partial<ServerStart>): Promise<void> {
 
 async function main(): Promise<void> {
   const port = parsePortArg(process.argv) ?? (await findAvailablePort(3456));
-  const pl4nDir = await resolvePl4nDir();
-  await startServer({ pl4nDir, port });
+  const resolved = await resolveServerConfig({ cwd: process.cwd(), port });
+  await startServer({
+    workspaces: resolved.workspaces,
+    bind: resolved.bind,
+    globalDir: resolved.globalDir,
+    port,
+  });
 }
 
 if (import.meta.main) {

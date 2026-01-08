@@ -11,14 +11,7 @@
     <style>
       /* Dark background at html level for iOS Safari status bar blending */
       html { background: #2d2a26; }
-      body {
-        background: #f5f3ef;
-        /* Small buffer for Safari chrome animation glitch - env() returns 0 in normal browsing */
-        padding-top: max(env(safe-area-inset-top, 0px), 12px);
-      }
-      @media (min-width: 768px) {
-        body { padding-top: 0; }
-      }
+      body { background: #f5f3ef; }
     </style>
   </head>
   <body>
@@ -29,7 +22,7 @@
         <span class="session-name">swift-river</span>
         <span class="font-controls">
           <button class="font-btn" id="font-down" title="Decrease font size">-</button>
-          <span class="font-size" id="font-size">13</span>
+          <span class="font-size" id="font-size">10</span>
           <button class="font-btn" id="font-up" title="Increase font size">+</button>
         </span>
         <span class="clock" id="clock">--:--:--</span>
@@ -90,15 +83,17 @@
       setInterval(updateClock, 1000);
 
       // Font size controls
-      let fontSize = 13;
+      let fontSize = 10;
       const minFontSize = 4;
       const maxFontSize = 24;
 
       function updateFontSize(newSize) {
         fontSize = Math.max(minFontSize, Math.min(maxFontSize, newSize));
         document.documentElement.style.setProperty('--tui-font-size', fontSize + 'px');
+        document.documentElement.style.setProperty('--editor-font-size', fontSize + 'px');
         document.getElementById('font-size').textContent = fontSize;
       }
+      updateFontSize(fontSize);
 
       document.getElementById('font-up').addEventListener('click', () => updateFontSize(fontSize + 1));
       document.getElementById('font-down').addEventListener('click', () => updateFontSize(fontSize - 1));

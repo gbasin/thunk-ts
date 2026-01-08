@@ -27,9 +27,11 @@ async function main(): Promise<void> {
 
   await runBuild(path.join(srcDir, "editor.ts"), distDir);
   await runBuild(path.join(srcDir, "list.ts"), distDir);
+  await runBuild(path.join(srcDir, "projects.ts"), distDir);
 
   await copyFile(srcDir, distDir, "index.html");
   await copyFile(srcDir, distDir, "list.html");
+  await copyFile(srcDir, distDir, "projects.html");
   await copyFile(srcDir, distDir, "styles.css");
 }
 

@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import type { CliDeps } from "../src/cli";
 import { Phase } from "../src/models";
 import { SessionManager } from "../src/session";
+import { createProjectId } from "../src/server/project-id";
 
 const decoder = new TextDecoder();
 const DEFAULT_CLAUDE_STUB = [
@@ -353,8 +354,9 @@ process.exit(1);
       }
 
       const output = JSON.parse(logs[0]);
+      const projectId = createProjectId(path.dirname(pl4nDir));
       expect(output.edit_url).toBe(
-        `http://127.0.0.1:4567/edit/${state.sessionId}?t=${state.sessionToken}`,
+        `http://127.0.0.1:4567/projects/${projectId}/edit/${state.sessionId}?t=${state.sessionToken}`,
       );
     });
   });
@@ -456,6 +458,8 @@ process.exit(1);
 
       const originalHost = process.env.PL4N_HOST;
       process.env.PL4N_HOST = "127.0.0.1";
+      const originalHome = process.env.PL4N_HOME;
+      process.env.PL4N_HOME = path.join(root, "global");
 
       try {
         const { runCliCommand } = await import("../src/cli");
@@ -466,6 +470,11 @@ process.exit(1);
           delete process.env.PL4N_HOST;
         } else {
           process.env.PL4N_HOST = originalHost;
+        }
+        if (originalHome === undefined) {
+          delete process.env.PL4N_HOME;
+        } else {
+          process.env.PL4N_HOME = originalHome;
         }
       }
 
@@ -481,7 +490,14 @@ process.exit(1);
       const repoRoot = path.resolve(import.meta.dir, "..");
       const pl4nDir = path.join(root, ".pl4n-test");
 
+      const originalHome = process.env.PL4N_HOME;
+      process.env.PL4N_HOME = path.join(root, "global");
       const result = runCli(["--pl4n-dir", pl4nDir, "server", "status"], repoRoot);
+      if (originalHome === undefined) {
+        delete process.env.PL4N_HOME;
+      } else {
+        process.env.PL4N_HOME = originalHome;
+      }
       expect(result.exitCode).toBe(0);
       const data = JSON.parse(result.stdout);
       expect(data.running).toBe(false);
@@ -493,7 +509,14 @@ process.exit(1);
       const repoRoot = path.resolve(import.meta.dir, "..");
       const pl4nDir = path.join(root, ".pl4n-test");
 
+      const originalHome = process.env.PL4N_HOME;
+      process.env.PL4N_HOME = path.join(root, "global");
       const result = runCli(["--pl4n-dir", pl4nDir, "server", "stop"], repoRoot);
+      if (originalHome === undefined) {
+        delete process.env.PL4N_HOME;
+      } else {
+        process.env.PL4N_HOME = originalHome;
+      }
       expect(result.exitCode).toBe(1);
       const data = JSON.parse(result.stdout);
       expect(data.error).toContain("Server not running");
@@ -504,14 +527,22 @@ process.exit(1);
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");
       const pl4nDir = path.join(root, ".pl4n-test");
-      await fs.mkdir(pl4nDir, { recursive: true });
+      const globalDir = path.join(root, "global");
+      await fs.mkdir(globalDir, { recursive: true });
       await fs.writeFile(
-        path.join(pl4nDir, "server.json"),
+        path.join(globalDir, "server.json"),
         JSON.stringify({ pid: process.pid, port: 7777 }),
         "utf8",
       );
 
+      const originalHome = process.env.PL4N_HOME;
+      process.env.PL4N_HOME = globalDir;
       const result = runCli(["--pl4n-dir", pl4nDir, "server", "start", "--foreground"], repoRoot);
+      if (originalHome === undefined) {
+        delete process.env.PL4N_HOME;
+      } else {
+        process.env.PL4N_HOME = originalHome;
+      }
       expect(result.exitCode).toBe(1);
       const data = JSON.parse(result.stdout);
       expect(data.error).toContain("Server already running");
@@ -523,7 +554,14 @@ process.exit(1);
       const repoRoot = path.resolve(import.meta.dir, "..");
       const pl4nDir = path.join(root, ".pl4n-test");
 
+      const originalHome = process.env.PL4N_HOME;
+      process.env.PL4N_HOME = path.join(root, "global");
       const result = runCli(["--pl4n-dir", pl4nDir, "server", "bogus"], repoRoot);
+      if (originalHome === undefined) {
+        delete process.env.PL4N_HOME;
+      } else {
+        process.env.PL4N_HOME = originalHome;
+      }
       expect(result.exitCode).toBe(1);
       const data = JSON.parse(result.stdout);
       expect(data.error).toContain("Unknown server action");
@@ -548,6 +586,10 @@ process.exit(1);
 
       const originalHost = process.env.PL4N_HOST;
       process.env.PL4N_HOST = "127.0.0.1";
+      const originalHome = process.env.PL4N_HOME;
+      process.env.PL4N_HOME = path.join(root, "global");
+      const originalWorkspace = process.env.PL4N_WORKSPACE;
+      process.env.PL4N_WORKSPACE = root;
 
       try {
         const { runCliCommand } = await import("../src/cli");
@@ -559,6 +601,16 @@ process.exit(1);
           delete process.env.PL4N_HOST;
         } else {
           process.env.PL4N_HOST = originalHost;
+        }
+        if (originalHome === undefined) {
+          delete process.env.PL4N_HOME;
+        } else {
+          process.env.PL4N_HOME = originalHome;
+        }
+        if (originalWorkspace === undefined) {
+          delete process.env.PL4N_WORKSPACE;
+        } else {
+          process.env.PL4N_WORKSPACE = originalWorkspace;
         }
       }
 
@@ -596,6 +648,10 @@ process.exit(1);
       process.env.PL4N_HOST = "127.0.0.1";
       const originalPort = process.env.PL4N_PORT;
       process.env.PL4N_PORT = "7788";
+      const originalHome = process.env.PL4N_HOME;
+      process.env.PL4N_HOME = path.join(root, "global");
+      const originalWorkspace = process.env.PL4N_WORKSPACE;
+      process.env.PL4N_WORKSPACE = root;
 
       try {
         const { runCliCommand } = await import("../src/cli");
@@ -612,9 +668,19 @@ process.exit(1);
         } else {
           process.env.PL4N_PORT = originalPort;
         }
+        if (originalHome === undefined) {
+          delete process.env.PL4N_HOME;
+        } else {
+          process.env.PL4N_HOME = originalHome;
+        }
+        if (originalWorkspace === undefined) {
+          delete process.env.PL4N_WORKSPACE;
+        } else {
+          process.env.PL4N_WORKSPACE = originalWorkspace;
+        }
       }
 
-      expect(receivedOptions).toEqual({ port: 7788 });
+      expect(receivedOptions).toEqual({ bind: "0.0.0.0", workspace: root, port: 7788 });
       const startOutput = JSON.parse(logs[0]);
       expect(startOutput.port).toBe(7788);
     });

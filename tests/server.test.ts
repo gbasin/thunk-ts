@@ -19,6 +19,9 @@ import {
 } from "../src/server/daemon";
 import { createHandlers } from "../src/server/handlers";
 import { findAvailablePort, getLocalIP } from "../src/server/network";
+import { ProjectRegistry } from "../src/server/projects";
+import { createProjectId } from "../src/server/project-id";
+import { createSseManager } from "../src/server/sse";
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "pl4n-server-"));
@@ -33,7 +36,56 @@ async function readJson(response: Response): Promise<Record<string, unknown>> {
   return (await response.json()) as Record<string, unknown>;
 }
 
-function extractListPayload(html: string): { sessions: Record<string, unknown>[] } {
+async function setupProject(root: string): Promise<{
+  projectRoot: string;
+  pl4nDir: string;
+  manager: SessionManager;
+  projectId: string;
+  globalDir: string;
+  registry: ProjectRegistry;
+}> {
+  const projectRoot = path.join(root, "project-a");
+  const pl4nDir = path.join(projectRoot, ".pl4n");
+  const manager = new SessionManager(pl4nDir);
+  const projectId = createProjectId(projectRoot);
+  const globalDir = path.join(root, "global");
+  const registry = new ProjectRegistry({ workspaces: [root] });
+  return { projectRoot, pl4nDir, manager, projectId, globalDir, registry };
+}
+
+async function createHandlersForProject(
+  root: string,
+  options: {
+    spawn?: (options: { cmd: string[] }) => { pid: number };
+    setup?: (manager: SessionManager, projectId: string, globalDir: string) => Promise<void>;
+  } = {},
+): Promise<{
+  manager: SessionManager;
+  projectId: string;
+  globalDir: string;
+  registry: ProjectRegistry;
+  handlers: ReturnType<typeof createHandlers>;
+  sse: ReturnType<typeof createSseManager>;
+}> {
+  const { manager, projectId, globalDir, registry } = await setupProject(root);
+  if (options.setup) {
+    await options.setup(manager, projectId, globalDir);
+  }
+  await registry.start();
+  const sse = createSseManager(registry);
+  const handlers = createHandlers({
+    globalDir,
+    registry,
+    sse,
+    spawn: options.spawn as undefined | ((options: { cmd: string[] }) => { pid: number }),
+  });
+  return { manager, projectId, globalDir, registry, handlers, sse };
+}
+
+function extractListPayload(html: string): {
+  project: Record<string, unknown>;
+  sessions: Record<string, unknown>[];
+} {
   const marker = "window.__PL4N_LIST__ = ";
   const start = html.indexOf(marker);
   if (start < 0) {
@@ -45,7 +97,10 @@ function extractListPayload(html: string): { sessions: Record<string, unknown>[]
     throw new Error("missing list payload terminator");
   }
   const json = html.slice(payloadStart, end).trim();
-  return JSON.parse(json) as { sessions: Record<string, unknown>[] };
+  return JSON.parse(json) as {
+    project: Record<string, unknown>;
+    sessions: Record<string, unknown>[];
+  };
 }
 
 describe("auth", () => {
@@ -59,13 +114,13 @@ describe("auth", () => {
 
   it("creates and validates global token", async () => {
     await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n");
-      const token = await ensureGlobalToken(pl4nDir);
+      const globalDir = path.join(root, "global");
+      const token = await ensureGlobalToken(globalDir);
       expect(token.length).toBe(16);
-      const same = await ensureGlobalToken(pl4nDir);
+      const same = await ensureGlobalToken(globalDir);
       expect(same).toBe(token);
-      expect(await validateGlobalToken(token, pl4nDir)).toBe(true);
-      expect(await validateGlobalToken("bad", pl4nDir)).toBe(false);
+      expect(await validateGlobalToken(token, globalDir)).toBe(true);
+      expect(await validateGlobalToken("bad", globalDir)).toBe(false);
     });
   });
 
@@ -118,9 +173,9 @@ describe("network", () => {
 describe("daemon", () => {
   it("starts daemon with stubbed spawn", async () => {
     await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n");
+      const globalDir = path.join(root, "global");
       const spawned: string[][] = [];
-      const result = await startDaemon(pl4nDir, {
+      const result = await startDaemon(globalDir, {
         port: 4567,
         findPort: async (start) => start,
         now: () => new Date("2024-01-01T00:00:00Z"),
@@ -134,7 +189,7 @@ describe("daemon", () => {
       expect(result.port).toBe(4567);
       expect(spawned.length).toBe(1);
 
-      const infoPath = path.join(pl4nDir, "server.json");
+      const infoPath = path.join(globalDir, "server.json");
       const raw = await fs.readFile(infoPath, "utf8");
       const info = JSON.parse(raw) as { pid: number; port: number; last_activity: string };
       expect(info.pid).toBe(2222);
@@ -145,10 +200,10 @@ describe("daemon", () => {
 
   it("updates server activity timestamp", async () => {
     await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n");
-      await fs.mkdir(pl4nDir, { recursive: true });
+      const globalDir = path.join(root, "global");
+      await fs.mkdir(globalDir, { recursive: true });
       await fs.writeFile(
-        path.join(pl4nDir, "server.json"),
+        path.join(globalDir, "server.json"),
         JSON.stringify({
           pid: 2222,
           port: 4567,
@@ -159,9 +214,9 @@ describe("daemon", () => {
       );
 
       const now = new Date("2024-02-01T00:00:00Z");
-      await updateServerActivity(pl4nDir, now);
+      await updateServerActivity(globalDir, now);
 
-      const raw = await fs.readFile(path.join(pl4nDir, "server.json"), "utf8");
+      const raw = await fs.readFile(path.join(globalDir, "server.json"), "utf8");
       const info = JSON.parse(raw) as { last_activity: string };
       expect(info.last_activity).toBe(now.toISOString());
     });
@@ -169,26 +224,26 @@ describe("daemon", () => {
 
   it("detects stale daemon", async () => {
     await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n");
-      await fs.mkdir(pl4nDir, { recursive: true });
+      const globalDir = path.join(root, "global");
+      await fs.mkdir(globalDir, { recursive: true });
       await fs.writeFile(
-        path.join(pl4nDir, "server.json"),
+        path.join(globalDir, "server.json"),
         JSON.stringify({ pid: 999999, port: 9999 }),
         "utf8",
       );
 
-      const status = await isDaemonRunning(pl4nDir);
+      const status = await isDaemonRunning(globalDir);
       expect(status.running).toBe(false);
-      await expect(fs.readFile(path.join(pl4nDir, "server.json"), "utf8")).rejects.toBeDefined();
+      await expect(fs.readFile(path.join(globalDir, "server.json"), "utf8")).rejects.toBeDefined();
     });
   });
 
   it("stops daemon when pid is killable", async () => {
     await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n");
-      await fs.mkdir(pl4nDir, { recursive: true });
+      const globalDir = path.join(root, "global");
+      await fs.mkdir(globalDir, { recursive: true });
       await fs.writeFile(
-        path.join(pl4nDir, "server.json"),
+        path.join(globalDir, "server.json"),
         JSON.stringify({ pid: 1234, port: 9999 }),
         "utf8",
       );
@@ -202,7 +257,7 @@ describe("daemon", () => {
       }) as typeof process.kill;
 
       try {
-        const stopped = await stopDaemon(pl4nDir);
+        const stopped = await stopDaemon(globalDir);
         expect(stopped).toBe(true);
       } finally {
         process.kill = originalKill;
@@ -212,10 +267,10 @@ describe("daemon", () => {
 
   it("returns false when daemon pid is missing", async () => {
     await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n");
-      await fs.mkdir(pl4nDir, { recursive: true });
+      const globalDir = path.join(root, "global");
+      await fs.mkdir(globalDir, { recursive: true });
       await fs.writeFile(
-        path.join(pl4nDir, "server.json"),
+        path.join(globalDir, "server.json"),
         JSON.stringify({ pid: 7777, port: 9999 }),
         "utf8",
       );
@@ -231,9 +286,11 @@ describe("daemon", () => {
       }) as typeof process.kill;
 
       try {
-        const stopped = await stopDaemon(pl4nDir);
+        const stopped = await stopDaemon(globalDir);
         expect(stopped).toBe(false);
-        await expect(fs.readFile(path.join(pl4nDir, "server.json"), "utf8")).rejects.toBeDefined();
+        await expect(
+          fs.readFile(path.join(globalDir, "server.json"), "utf8"),
+        ).rejects.toBeDefined();
       } finally {
         process.kill = originalKill;
       }
@@ -242,10 +299,10 @@ describe("daemon", () => {
 
   it("propagates daemon stop errors", async () => {
     await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n");
-      await fs.mkdir(pl4nDir, { recursive: true });
+      const globalDir = path.join(root, "global");
+      await fs.mkdir(globalDir, { recursive: true });
       await fs.writeFile(
-        path.join(pl4nDir, "server.json"),
+        path.join(globalDir, "server.json"),
         JSON.stringify({ pid: 8888, port: 9999 }),
         "utf8",
       );
@@ -261,7 +318,7 @@ describe("daemon", () => {
       }) as typeof process.kill;
 
       try {
-        await expect(stopDaemon(pl4nDir)).rejects.toBeDefined();
+        await expect(stopDaemon(globalDir)).rejects.toBeDefined();
       } finally {
         process.kill = originalKill;
       }
@@ -272,17 +329,19 @@ describe("daemon", () => {
 describe("handlers", () => {
   it("serves edit template with read-only based on phase", async () => {
     await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n");
-      const manager = new SessionManager(pl4nDir);
-      const state = await manager.createSession("Edit task");
-      state.phase = Phase.UserReview;
-      await manager.saveState(state);
-
-      const handlers = createHandlers({ pl4nDir, manager });
+      let state!: Awaited<ReturnType<SessionManager["createSession"]>>;
+      const { handlers, projectId, manager, registry, sse } = await createHandlersForProject(root, {
+        setup: async (manager) => {
+          state = await manager.createSession("Edit task");
+          state.phase = Phase.UserReview;
+          await manager.saveState(state);
+        },
+      });
       const token = state.sessionToken ?? "";
 
       const editRes = await handlers.handleEdit(
-        new Request(`http://localhost/edit/${state.sessionId}?t=${token}`),
+        new Request(`http://localhost/projects/${projectId}/edit/${state.sessionId}?t=${token}`),
+        projectId,
         state.sessionId,
       );
       expect(editRes.status).toBe(200);
@@ -295,53 +354,68 @@ describe("handlers", () => {
       state.phase = Phase.Approved;
       await manager.saveState(state);
       const readonlyRes = await handlers.handleEdit(
-        new Request(`http://localhost/edit/${state.sessionId}?t=${token}`),
+        new Request(`http://localhost/projects/${projectId}/edit/${state.sessionId}?t=${token}`),
+        projectId,
         state.sessionId,
       );
       expect(readonlyRes.status).toBe(200);
       const readonlyHtml = await readonlyRes.text();
       expect(readonlyHtml).toContain(`data-phase="${Phase.Approved}"`);
       expect(readonlyHtml).toContain('data-read-only="true"');
+
+      await registry.stop();
+      sse.close();
     });
   });
 
   it("rejects edit when token is invalid", async () => {
     await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n");
-      const manager = new SessionManager(pl4nDir);
-      const state = await manager.createSession("Edit task");
-      state.phase = Phase.UserReview;
-      await manager.saveState(state);
+      let state!: Awaited<ReturnType<SessionManager["createSession"]>>;
+      const { handlers, projectId, registry, sse } = await createHandlersForProject(root, {
+        setup: async (manager) => {
+          state = await manager.createSession("Edit task");
+          state.phase = Phase.UserReview;
+          await manager.saveState(state);
+        },
+      });
 
-      const handlers = createHandlers({ pl4nDir, manager });
       const res = await handlers.handleEdit(
-        new Request(`http://localhost/edit/${state.sessionId}?t=bad`),
+        new Request(`http://localhost/projects/${projectId}/edit/${state.sessionId}?t=bad`),
+        projectId,
         state.sessionId,
       );
       expect(res.status).toBe(401);
+      await registry.stop();
+      sse.close();
     });
   });
 
   it("serves content and autosaves", async () => {
     await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n");
-      const manager = new SessionManager(pl4nDir);
-      const state = await manager.createSession("Plan task");
-      state.phase = Phase.UserReview;
-      await manager.saveState(state);
+      let state!: Awaited<ReturnType<SessionManager["createSession"]>>;
+      let stat!: { mtimeMs: number };
+      const { handlers, projectId, registry, sse } = await createHandlersForProject(root, {
+        spawn: () => ({ pid: 1 }),
+        setup: async (manager) => {
+          state = await manager.createSession("Plan task");
+          state.phase = Phase.UserReview;
+          await manager.saveState(state);
 
-      const paths = manager.getPaths(state.sessionId);
-      await fs.mkdir(path.dirname(paths.turnFile(state.turn)), { recursive: true });
-      await fs.writeFile(paths.turnFile(state.turn), "# Plan\n", "utf8");
-      const snapshotFile = paths.turnFile(state.turn).replace(/\.md$/, ".snapshot.md");
-      await fs.writeFile(snapshotFile, "# Snapshot\n", "utf8");
-      const stat = await fs.stat(paths.turnFile(state.turn));
+          const paths = manager.getPaths(state.sessionId);
+          await fs.mkdir(path.dirname(paths.turnFile(state.turn)), { recursive: true });
+          await fs.writeFile(paths.turnFile(state.turn), "# Plan\n", "utf8");
+          const snapshotFile = paths.turnFile(state.turn).replace(/\.md$/, ".snapshot.md");
+          await fs.writeFile(snapshotFile, "# Snapshot\n", "utf8");
+          stat = await fs.stat(paths.turnFile(state.turn));
+        },
+      });
 
       const token = state.sessionToken ?? "";
-      const handlers = createHandlers({ pl4nDir, manager, spawn: () => ({ pid: 1 }) });
-
       const contentRes = await handlers.handleGetContent(
-        new Request(`http://localhost/api/content/${state.sessionId}?t=${token}`),
+        new Request(
+          `http://localhost/api/projects/${projectId}/content/${state.sessionId}?t=${token}`,
+        ),
+        projectId,
         state.sessionId,
       );
       expect(contentRes.status).toBe(200);
@@ -353,42 +427,57 @@ describe("handlers", () => {
       expect(content.mtime).toBe(stat.mtimeMs);
 
       const autosaveRes = await handlers.handleAutosave(
-        new Request(`http://localhost/api/autosave/${state.sessionId}?t=${token}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: "# Draft\n" }),
-        }),
+        new Request(
+          `http://localhost/api/projects/${projectId}/autosave/${state.sessionId}?t=${token}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content: "# Draft\n" }),
+          },
+        ),
+        projectId,
         state.sessionId,
       );
       expect(autosaveRes.status).toBe(200);
 
       const afterAutosave = await handlers.handleGetContent(
-        new Request(`http://localhost/api/content/${state.sessionId}?t=${token}`),
+        new Request(
+          `http://localhost/api/projects/${projectId}/content/${state.sessionId}?t=${token}`,
+        ),
+        projectId,
         state.sessionId,
       );
       const afterData = await readJson(afterAutosave);
       expect(afterData.hasAutosave).toBe(true);
       expect(afterData.autosave).toBe("# Draft\n");
+
+      await registry.stop();
+      sse.close();
     });
   });
 
   it("loads plan file when approved and falls back when missing", async () => {
     await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n");
-      const manager = new SessionManager(pl4nDir);
-      const state = await manager.createSession("Plan task");
-      state.phase = Phase.Approved;
-      await manager.saveState(state);
+      let state!: Awaited<ReturnType<SessionManager["createSession"]>>;
+      const { handlers, projectId, manager, registry, sse } = await createHandlersForProject(root, {
+        setup: async (manager) => {
+          state = await manager.createSession("Plan task");
+          state.phase = Phase.Approved;
+          await manager.saveState(state);
 
-      const paths = manager.getPaths(state.sessionId);
-      await fs.mkdir(path.dirname(paths.turnFile(state.turn)), { recursive: true });
-      await fs.writeFile(paths.turnFile(state.turn), "Turn content\n", "utf8");
+          const paths = manager.getPaths(state.sessionId);
+          await fs.mkdir(path.dirname(paths.turnFile(state.turn)), { recursive: true });
+          await fs.writeFile(paths.turnFile(state.turn), "Turn content\n", "utf8");
+        },
+      });
 
       const token = state.sessionToken ?? "";
-      const handlers = createHandlers({ pl4nDir, manager });
 
       const fallbackRes = await handlers.handleGetContent(
-        new Request(`http://localhost/api/content/${state.sessionId}?t=${token}`),
+        new Request(
+          `http://localhost/api/projects/${projectId}/content/${state.sessionId}?t=${token}`,
+        ),
+        projectId,
         state.sessionId,
       );
       expect(fallbackRes.status).toBe(200);
@@ -396,32 +485,48 @@ describe("handlers", () => {
       expect(fallbackPayload.content).toBe("Turn content\n");
       expect(fallbackPayload.readOnly).toBe(true);
 
+      const paths = manager.getPaths(state.sessionId);
       await fs.writeFile(path.join(paths.root, "PLAN.md"), "Plan content\n", "utf8");
       const planRes = await handlers.handleGetContent(
-        new Request(`http://localhost/api/content/${state.sessionId}?t=${token}`),
+        new Request(
+          `http://localhost/api/projects/${projectId}/content/${state.sessionId}?t=${token}`,
+        ),
+        projectId,
         state.sessionId,
       );
       expect(planRes.status).toBe(200);
       const planPayload = await readJson(planRes);
       expect(planPayload.content).toBe("Plan content\n");
       expect(planPayload.readOnly).toBe(true);
+
+      await registry.stop();
+      sse.close();
     });
   });
 
   it("returns session list without edit links when not in user review", async () => {
     await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n");
-      const manager = new SessionManager(pl4nDir);
-      const review = await manager.createSession("<script>alert(1)</script>");
-      review.phase = Phase.UserReview;
-      await manager.saveState(review);
-      const approved = await manager.createSession("Approved task");
-      approved.phase = Phase.Approved;
-      await manager.saveState(approved);
+      let review!: Awaited<ReturnType<SessionManager["createSession"]>>;
+      let approved: Awaited<ReturnType<SessionManager["createSession"]>>;
+      const { handlers, projectId, globalDir, registry, sse } = await createHandlersForProject(
+        root,
+        {
+          setup: async (manager) => {
+            review = await manager.createSession("<script>alert(1)</script>");
+            review.phase = Phase.UserReview;
+            await manager.saveState(review);
+            approved = await manager.createSession("Approved task");
+            approved.phase = Phase.Approved;
+            await manager.saveState(approved);
+          },
+        },
+      );
 
-      const handlers = createHandlers({ pl4nDir, manager });
-      const token = await ensureGlobalToken(pl4nDir);
-      const listRes = await handlers.handleList(new Request(`http://localhost/list?t=${token}`));
+      const token = await ensureGlobalToken(globalDir);
+      const listRes = await handlers.handleProjectSessionsPage(
+        new Request(`http://localhost/projects/${projectId}/sessions?t=${token}`),
+        projectId,
+      );
       expect(listRes.status).toBe(200);
       const html = await listRes.text();
       expect(html).toContain("\\u003cscript");
@@ -435,52 +540,63 @@ describe("handlers", () => {
       ) as Record<string, unknown> | undefined;
 
       expect(reviewItem?.edit_path).toBe(
-        `/edit/${review.sessionId}?t=${review.sessionToken ?? ""}`,
+        `/projects/${projectId}/edit/${review.sessionId}?t=${review.sessionToken ?? ""}`,
       );
       expect(approvedItem?.edit_path).toBeNull();
+
+      await registry.stop();
+      sse.close();
     });
   });
 
   it("handles save conflicts and continue", async () => {
     await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n");
-      const manager = new SessionManager(pl4nDir);
-      const state = await manager.createSession("Plan task");
-      state.phase = Phase.UserReview;
-      await manager.saveState(state);
-
-      const paths = manager.getPaths(state.sessionId);
-      await fs.mkdir(path.dirname(paths.turnFile(state.turn)), { recursive: true });
-      await fs.writeFile(paths.turnFile(state.turn), "# Plan\n", "utf8");
-      const stat = await fs.stat(paths.turnFile(state.turn));
-      const token = state.sessionToken ?? "";
+      let state!: Awaited<ReturnType<SessionManager["createSession"]>>;
+      let stat!: { mtimeMs: number };
       let spawned = false;
-
-      const handlers = createHandlers({
-        pl4nDir,
-        manager,
+      const { handlers, projectId, registry, sse } = await createHandlersForProject(root, {
         spawn: () => {
           spawned = true;
           return { pid: 1 };
         },
+        setup: async (manager) => {
+          state = await manager.createSession("Plan task");
+          state.phase = Phase.UserReview;
+          await manager.saveState(state);
+
+          const paths = manager.getPaths(state.sessionId);
+          await fs.mkdir(path.dirname(paths.turnFile(state.turn)), { recursive: true });
+          await fs.writeFile(paths.turnFile(state.turn), "# Plan\n", "utf8");
+          stat = await fs.stat(paths.turnFile(state.turn));
+        },
       });
 
+      const token = state.sessionToken ?? "";
+
       const staleRes = await handlers.handleSave(
-        new Request(`http://localhost/api/save/${state.sessionId}?t=${token}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: "# New\n", mtime: 0 }),
-        }),
+        new Request(
+          `http://localhost/api/projects/${projectId}/save/${state.sessionId}?t=${token}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content: "# New\n", mtime: 0 }),
+          },
+        ),
+        projectId,
         state.sessionId,
       );
       expect(staleRes.status).toBe(409);
 
       const saveRes = await handlers.handleSave(
-        new Request(`http://localhost/api/save/${state.sessionId}?t=${token}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: "# New\n", mtime: stat.mtimeMs }),
-        }),
+        new Request(
+          `http://localhost/api/projects/${projectId}/save/${state.sessionId}?t=${token}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content: "# New\n", mtime: stat.mtimeMs }),
+          },
+        ),
+        projectId,
         state.sessionId,
       );
       expect(saveRes.status).toBe(200);
@@ -488,76 +604,106 @@ describe("handlers", () => {
       const saveMtime = savePayload.mtime as number;
 
       const contRes = await handlers.handleContinue(
-        new Request(`http://localhost/api/continue/${state.sessionId}?t=${token}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: "# New\n", mtime: saveMtime }),
-        }),
+        new Request(
+          `http://localhost/api/projects/${projectId}/continue/${state.sessionId}?t=${token}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content: "# New\n", mtime: saveMtime }),
+          },
+        ),
+        projectId,
         state.sessionId,
       );
       expect(contRes.status).toBe(202);
       expect(spawned).toBe(true);
+
+      await registry.stop();
+      sse.close();
     });
   });
 
   it("rejects save and autosave when session is locked", async () => {
     await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n");
-      const manager = new SessionManager(pl4nDir);
-      const state = await manager.createSession("Plan task");
-      state.phase = Phase.Approved;
-      await manager.saveState(state);
+      let state!: Awaited<ReturnType<SessionManager["createSession"]>>;
+      const { handlers, projectId, registry, sse } = await createHandlersForProject(root, {
+        setup: async (manager) => {
+          state = await manager.createSession("Plan task");
+          state.phase = Phase.Approved;
+          await manager.saveState(state);
+        },
+      });
 
-      const handlers = createHandlers({ pl4nDir, manager });
       const token = state.sessionToken ?? "";
 
       const saveRes = await handlers.handleSave(
-        new Request(`http://localhost/api/save/${state.sessionId}?t=${token}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: "Nope\n", mtime: 0 }),
-        }),
+        new Request(
+          `http://localhost/api/projects/${projectId}/save/${state.sessionId}?t=${token}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content: "Nope\n", mtime: 0 }),
+          },
+        ),
+        projectId,
         state.sessionId,
       );
       expect(saveRes.status).toBe(423);
 
       const autosaveRes = await handlers.handleAutosave(
-        new Request(`http://localhost/api/autosave/${state.sessionId}?t=${token}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: "Draft\n" }),
-        }),
+        new Request(
+          `http://localhost/api/projects/${projectId}/autosave/${state.sessionId}?t=${token}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content: "Draft\n" }),
+          },
+        ),
+        projectId,
         state.sessionId,
       );
       expect(autosaveRes.status).toBe(423);
+
+      await registry.stop();
+      sse.close();
     });
   });
 
   it("deletes autosaves when requested", async () => {
     await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n");
-      const manager = new SessionManager(pl4nDir);
-      const state = await manager.createSession("Plan task");
-      state.phase = Phase.UserReview;
-      await manager.saveState(state);
+      let state!: Awaited<ReturnType<SessionManager["createSession"]>>;
+      const { handlers, projectId, manager, registry, sse } = await createHandlersForProject(root, {
+        setup: async (manager) => {
+          state = await manager.createSession("Plan task");
+          state.phase = Phase.UserReview;
+          await manager.saveState(state);
+        },
+      });
 
-      const handlers = createHandlers({ pl4nDir, manager });
       const token = state.sessionToken ?? "";
 
       const autosaveRes = await handlers.handleAutosave(
-        new Request(`http://localhost/api/autosave/${state.sessionId}?t=${token}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: "Draft\n" }),
-        }),
+        new Request(
+          `http://localhost/api/projects/${projectId}/autosave/${state.sessionId}?t=${token}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content: "Draft\n" }),
+          },
+        ),
+        projectId,
         state.sessionId,
       );
       expect(autosaveRes.status).toBe(200);
 
       const deleteRes = await handlers.handleAutosave(
-        new Request(`http://localhost/api/autosave/${state.sessionId}?t=${token}`, {
-          method: "DELETE",
-        }),
+        new Request(
+          `http://localhost/api/projects/${projectId}/autosave/${state.sessionId}?t=${token}`,
+          {
+            method: "DELETE",
+          },
+        ),
+        projectId,
         state.sessionId,
       );
       expect(deleteRes.status).toBe(200);
@@ -568,52 +714,73 @@ describe("handlers", () => {
         `${String(state.turn).padStart(3, "0")}-autosave.md`,
       );
       await expect(fs.access(autosavePath)).rejects.toBeDefined();
+
+      await registry.stop();
+      sse.close();
     });
   });
 
   it("rejects invalid payloads and tokens for status", async () => {
     await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n");
-      const manager = new SessionManager(pl4nDir);
-      const state = await manager.createSession("Plan task");
-      state.phase = Phase.UserReview;
-      await manager.saveState(state);
-
-      const handlers = createHandlers({ pl4nDir, manager });
+      let state!: Awaited<ReturnType<SessionManager["createSession"]>>;
+      const { handlers, projectId, registry, sse } = await createHandlersForProject(root, {
+        setup: async (manager) => {
+          state = await manager.createSession("Plan task");
+          state.phase = Phase.UserReview;
+          await manager.saveState(state);
+        },
+      });
 
       const badSave = await handlers.handleSave(
-        new Request(`http://localhost/api/save/${state.sessionId}?t=${state.sessionToken ?? ""}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: "Missing mtime\n" }),
-        }),
+        new Request(
+          `http://localhost/api/projects/${projectId}/save/${state.sessionId}?t=${state.sessionToken ?? ""}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content: "Missing mtime\n" }),
+          },
+        ),
+        projectId,
         state.sessionId,
       );
       expect(badSave.status).toBe(400);
 
       const statusRes = await handlers.handleStatus(
-        new Request(`http://localhost/api/status/${state.sessionId}?t=bad`),
+        new Request(`http://localhost/api/projects/${projectId}/status/${state.sessionId}?t=bad`),
+        projectId,
         state.sessionId,
       );
       expect(statusRes.status).toBe(401);
+
+      await registry.stop();
+      sse.close();
     });
   });
 
   it("validates tokens and serves list", async () => {
     await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n");
-      const manager = new SessionManager(pl4nDir);
-      const state = await manager.createSession("Plan task");
-      state.phase = Phase.UserReview;
-      await manager.saveState(state);
+      let state!: Awaited<ReturnType<SessionManager["createSession"]>>;
+      const { handlers, projectId, globalDir, registry, sse } = await createHandlersForProject(
+        root,
+        {
+          setup: async (manager) => {
+            state = await manager.createSession("Plan task");
+            state.phase = Phase.UserReview;
+            await manager.saveState(state);
+          },
+        },
+      );
 
-      const handlers = createHandlers({ pl4nDir, manager });
-
-      const badList = await handlers.handleList(new Request("http://localhost/list?t=bad"));
+      const badList = await handlers.handleProjectsPage(
+        new Request("http://localhost/projects?t=bad"),
+      );
       expect(badList.status).toBe(401);
 
-      const token = await ensureGlobalToken(pl4nDir);
-      const listRes = await handlers.handleList(new Request(`http://localhost/list?t=${token}`));
+      const token = await ensureGlobalToken(globalDir);
+      const listRes = await handlers.handleProjectSessionsPage(
+        new Request(`http://localhost/projects/${projectId}/sessions?t=${token}`),
+        projectId,
+      );
       expect(listRes.status).toBe(200);
       const body = await listRes.text();
       expect(body).toContain(state.sessionId);
@@ -623,28 +790,30 @@ describe("handlers", () => {
         "styles.css",
       );
       expect(assetRes.status).toBe(200);
+
+      await registry.stop();
+      sse.close();
     });
   });
 
   it("rejects asset traversal attempts", async () => {
     await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n");
-      const manager = new SessionManager(pl4nDir);
-      const handlers = createHandlers({ pl4nDir, manager });
+      const { handlers, registry, sse } = await createHandlersForProject(root);
 
       const res = await handlers.handleAssets(
         new Request("http://localhost/assets/../secret"),
         "../secret",
       );
       expect(res.status).toBe(404);
+
+      await registry.stop();
+      sse.close();
     });
   });
 
   it("builds and serves editor.js from TypeScript source", async () => {
     await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n");
-      const manager = new SessionManager(pl4nDir);
-      const handlers = createHandlers({ pl4nDir, manager });
+      const { handlers, registry, sse } = await createHandlersForProject(root);
 
       const res = await handlers.handleAssets(
         new Request("http://localhost/assets/editor.js"),
@@ -658,14 +827,15 @@ describe("handlers", () => {
       expect(js.length).toBeGreaterThan(1000);
       expect(js).toContain("Pl4nEditor");
       expect(js).toContain("customElements.define");
+
+      await registry.stop();
+      sse.close();
     });
   });
 
   it("builds and serves list.js from TypeScript source", async () => {
     await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n");
-      const manager = new SessionManager(pl4nDir);
-      const handlers = createHandlers({ pl4nDir, manager });
+      const { handlers, registry, sse } = await createHandlersForProject(root);
 
       const res = await handlers.handleAssets(
         new Request("http://localhost/assets/list.js"),
@@ -674,29 +844,17 @@ describe("handlers", () => {
       expect(res.status).toBe(200);
       const js = await res.text();
       expect(js).toContain("Pl4nList");
-    });
-  });
 
-  it("idles when inactive and no user review", async () => {
-    await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n");
-      const manager = new SessionManager(pl4nDir);
-      const state = await manager.createSession("Plan task");
-      state.phase = Phase.Approved;
-      await manager.saveState(state);
-
-      await fs.mkdir(pl4nDir, { recursive: true });
-      await fs.writeFile(
-        path.join(pl4nDir, "server.json"),
-        JSON.stringify({
-          last_activity: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
-        }),
-        "utf8",
+      const projectsRes = await handlers.handleAssets(
+        new Request("http://localhost/assets/projects.js"),
+        "projects.js",
       );
+      expect(projectsRes.status).toBe(200);
+      const projectsJs = await projectsRes.text();
+      expect(projectsJs).toContain("Pl4nProjects");
 
-      const handlers = createHandlers({ pl4nDir, manager });
-      const shouldIdle = await handlers.handleIdleCheck();
-      expect(shouldIdle).toBe(true);
+      await registry.stop();
+      sse.close();
     });
   });
 });

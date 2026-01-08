@@ -6,7 +6,8 @@ import { describe, expect, it } from "bun:test";
 import { Phase } from "../src/models";
 import { SessionManager } from "../src/session";
 import { ensureGlobalToken } from "../src/server/auth";
-import { parsePortArg, resolvePl4nDir, startServer } from "../src/server/index";
+import { parsePortArg, startServer } from "../src/server/index";
+import { createProjectId } from "../src/server/project-id";
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "pl4n-server-index-"));
@@ -17,10 +18,18 @@ async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
   }
 }
 
+function requireValue<T>(value: T | null | undefined, message: string): NonNullable<T> {
+  if (value === null || value === undefined) {
+    throw new Error(message);
+  }
+  return value;
+}
+
 describe("server index", () => {
   it("routes requests and shuts down on idle", async () => {
     await withTempDir(async (root) => {
-      const pl4nDir = path.join(root, ".pl4n");
+      const projectRoot = path.join(root, "project-a");
+      const pl4nDir = path.join(projectRoot, ".pl4n");
       const manager = new SessionManager(pl4nDir);
       const state = await manager.createSession("Server routing");
       state.phase = Phase.Approved;
@@ -31,12 +40,12 @@ describe("server index", () => {
       await fs.writeFile(paths.turnFile(state.turn), "Plan content\n", "utf8");
 
       const sessionToken = state.sessionToken ?? "";
-      const globalToken = await ensureGlobalToken(pl4nDir);
+      const globalDir = path.join(root, "global");
+      const globalToken = await ensureGlobalToken(globalDir, pl4nDir);
+      const projectId = createProjectId(projectRoot);
       const base = "http://localhost";
 
       const originalServe = Bun.serve;
-      const originalSetInterval = globalThis.setInterval;
-      const originalClearInterval = globalThis.clearInterval;
       const originalOn = process.on;
       let fetchHandler: ((req: Request) => Promise<Response>) | null = null;
       let resolveServe: (() => void) | null = null;
@@ -44,7 +53,6 @@ describe("server index", () => {
         resolveServe = resolve;
       });
       let stopCalled = false;
-      let intervalCallback: (() => void | Promise<void>) | null = null;
       (Bun as unknown as { serve: typeof Bun.serve }).serve = ((options: {
         fetch: (req: Request) => Promise<Response>;
       }) => {
@@ -56,15 +64,21 @@ describe("server index", () => {
           },
         } as { stop: (force?: boolean) => Promise<void> };
       }) as typeof Bun.serve;
-      globalThis.setInterval = ((fn: () => void | Promise<void>) => {
-        intervalCallback = fn;
-        return { unref: () => {} } as unknown as ReturnType<typeof setInterval>;
-      }) as typeof setInterval;
-      globalThis.clearInterval = (() => {}) as typeof clearInterval;
-      process.on = (() => process) as typeof process.on;
+      let signalHandler: (() => void | Promise<void>) | null = null;
+      process.on = ((signal: string, handler: () => void | Promise<void>) => {
+        if (signal === "SIGTERM" || signal === "SIGINT") {
+          signalHandler = handler;
+        }
+        return process;
+      }) as typeof process.on;
 
       try {
-        const serverPromise = startServer({ pl4nDir, port: 4567 });
+        const serverPromise = startServer({
+          globalDir,
+          workspaces: [root],
+          bind: "127.0.0.1",
+          port: 4567,
+        });
 
         await serveReady;
         if (!fetchHandler) {
@@ -72,79 +86,106 @@ describe("server index", () => {
         }
         const handler = fetchHandler as (req: Request) => Promise<Response>;
 
-        const listRes = await handler(new Request(`${base}/list?t=${globalToken}`));
+        const listRes = await handler(new Request(`${base}/projects?t=${globalToken}`));
         expect(listRes.status).toBe(200);
 
         const editRes = await handler(
-          new Request(`${base}/edit/${state.sessionId}?t=${sessionToken}`),
+          new Request(`${base}/projects/${projectId}/edit/${state.sessionId}?t=${sessionToken}`),
         );
         expect(editRes.status).toBe(200);
 
-        const editMissing = await handler(new Request(`${base}/edit/`));
+        const editMissing = await handler(new Request(`${base}/projects/${projectId}/edit/`));
         expect(editMissing.status).toBe(404);
 
         const contentRes = await handler(
-          new Request(`${base}/api/content/${state.sessionId}?t=${sessionToken}`),
+          new Request(
+            `${base}/api/projects/${projectId}/content/${state.sessionId}?t=${sessionToken}`,
+          ),
         );
         expect(contentRes.status).toBe(200);
 
-        const contentMissing = await handler(new Request(`${base}/api/content/`));
+        const contentMissing = await handler(
+          new Request(`${base}/api/projects/${projectId}/content`),
+        );
         expect(contentMissing.status).toBe(404);
 
         const saveMethod = await handler(
-          new Request(`${base}/api/save/${state.sessionId}?t=${sessionToken}`),
+          new Request(
+            `${base}/api/projects/${projectId}/save/${state.sessionId}?t=${sessionToken}`,
+          ),
         );
         expect(saveMethod.status).toBe(405);
 
         const saveRes = await handler(
-          new Request(`${base}/api/save/${state.sessionId}?t=${sessionToken}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ content: "Nope\n", mtime: 0 }),
-          }),
+          new Request(
+            `${base}/api/projects/${projectId}/save/${state.sessionId}?t=${sessionToken}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ content: "Nope\n", mtime: 0 }),
+            },
+          ),
         );
         expect(saveRes.status).toBe(423);
 
         const autosaveMethod = await handler(
-          new Request(`${base}/api/autosave/${state.sessionId}?t=${sessionToken}`, {
-            method: "PUT",
-          }),
+          new Request(
+            `${base}/api/projects/${projectId}/autosave/${state.sessionId}?t=${sessionToken}`,
+            {
+              method: "PUT",
+            },
+          ),
         );
         expect(autosaveMethod.status).toBe(405);
 
         const autosaveRes = await handler(
-          new Request(`${base}/api/autosave/${state.sessionId}?t=${sessionToken}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ content: "Draft\n" }),
-          }),
+          new Request(
+            `${base}/api/projects/${projectId}/autosave/${state.sessionId}?t=${sessionToken}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ content: "Draft\n" }),
+            },
+          ),
         );
         expect(autosaveRes.status).toBe(423);
 
         const continueMethod = await handler(
-          new Request(`${base}/api/continue/${state.sessionId}?t=${sessionToken}`),
+          new Request(
+            `${base}/api/projects/${projectId}/continue/${state.sessionId}?t=${sessionToken}`,
+          ),
         );
         expect(continueMethod.status).toBe(405);
 
         const continueRes = await handler(
-          new Request(`${base}/api/continue/${state.sessionId}?t=${sessionToken}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ content: "Nope\n", mtime: 0 }),
-          }),
+          new Request(
+            `${base}/api/projects/${projectId}/continue/${state.sessionId}?t=${sessionToken}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ content: "Nope\n", mtime: 0 }),
+            },
+          ),
         );
         expect(continueRes.status).toBe(423);
 
         const statusRes = await handler(
-          new Request(`${base}/api/status/${state.sessionId}?t=${sessionToken}`),
+          new Request(
+            `${base}/api/projects/${projectId}/status/${state.sessionId}?t=${sessionToken}`,
+          ),
         );
         expect(statusRes.status).toBe(200);
 
-        const approveMissing = await handler(new Request(`${base}/api/approve/`));
+        const approveMissing = await handler(
+          new Request(`${base}/api/projects/${projectId}/approve/`),
+        );
         expect(approveMissing.status).toBe(404);
 
         const approveRes = await handler(
-          new Request(`${base}/api/approve/${state.sessionId}?t=${sessionToken}`),
+          new Request(
+            `${base}/api/projects/${projectId}/approve/${state.sessionId}?t=${sessionToken}`,
+            { method: "POST" },
+          ),
         );
         expect(approveRes.status).toBe(423);
 
@@ -154,25 +195,23 @@ describe("server index", () => {
         const missing = await handler(new Request(`${base}/missing`));
         expect(missing.status).toBe(404);
 
-        const infoPath = path.join(pl4nDir, "server.json");
+        const infoPath = path.join(globalDir, "server.json");
         const infoRaw = await fs.readFile(infoPath, "utf8");
         const info = JSON.parse(infoRaw) as Record<string, unknown>;
         info.last_activity = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
         await fs.writeFile(infoPath, `${JSON.stringify(info)}\n`, "utf8");
 
-        if (!intervalCallback) {
-          throw new Error("idle check not scheduled");
-        }
-        const idleCheck = intervalCallback as () => void | Promise<void>;
-        await idleCheck();
+        const signalHandlerFn = requireValue<() => void | Promise<void>>(
+          signalHandler,
+          "signal handler not registered",
+        );
+        await signalHandlerFn();
         await serverPromise;
 
         expect(stopCalled).toBe(true);
         await expect(fs.readFile(infoPath, "utf8")).rejects.toBeDefined();
       } finally {
         (Bun as unknown as { serve: typeof Bun.serve }).serve = originalServe;
-        globalThis.setInterval = originalSetInterval;
-        globalThis.clearInterval = originalClearInterval;
         process.on = originalOn;
       }
     });
@@ -194,38 +233,5 @@ describe("server index", () => {
         process.env.PL4N_PORT = originalPort;
       }
     }
-  });
-
-  it("resolves pl4n dir from env and parent paths", async () => {
-    await withTempDir(async (root) => {
-      const originalDir = process.env.PL4N_DIR;
-      const originalCwd = process.cwd();
-      const envDir = path.join(root, ".pl4n-env");
-      const nested = path.join(root, "nested", "child");
-      await fs.mkdir(envDir, { recursive: true });
-      await fs.mkdir(nested, { recursive: true });
-
-      try {
-        process.env.PL4N_DIR = envDir;
-        expect(await resolvePl4nDir()).toBe(envDir);
-
-        delete process.env.PL4N_DIR;
-        const parentPl4n = path.join(root, ".pl4n");
-        await fs.mkdir(parentPl4n, { recursive: true });
-        process.chdir(nested);
-        expect(await resolvePl4nDir()).toBe(await fs.realpath(parentPl4n));
-
-        await fs.rm(parentPl4n, { recursive: true, force: true });
-        const nestedReal = await fs.realpath(nested);
-        expect(await resolvePl4nDir()).toBe(path.join(nestedReal, ".pl4n"));
-      } finally {
-        process.chdir(originalCwd);
-        if (originalDir === undefined) {
-          delete process.env.PL4N_DIR;
-        } else {
-          process.env.PL4N_DIR = originalDir;
-        }
-      }
-    });
   });
 });

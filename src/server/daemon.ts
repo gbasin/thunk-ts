@@ -19,12 +19,15 @@ export type ServerInfo = {
   port: number;
   started_at: string;
   last_activity: string;
+  bind?: string;
 };
 
 type StartOptions = {
   spawn?: SpawnLike;
   findPort?: (start: number) => Promise<number>;
   port?: number;
+  bind?: string;
+  workspace?: string;
   now?: () => Date;
   entrypoint?: string;
   env?: NodeJS.ProcessEnv;
@@ -42,11 +45,7 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
-async function resolveDaemonCommand(
-  pl4nDir: string,
-  port: number,
-  options: StartOptions,
-): Promise<string[]> {
+async function resolveDaemonCommand(port: number, options: StartOptions): Promise<string[]> {
   if (options.entrypoint) {
     return [process.execPath, options.entrypoint, "--port", String(port)];
   }
@@ -62,23 +61,15 @@ async function resolveDaemonCommand(
   }
 
   const cliEntrypoint = process.argv[1] ?? path.join(import.meta.dir, "index.js");
-  return [
-    process.execPath,
-    cliEntrypoint,
-    "--pl4n-dir",
-    pl4nDir,
-    "server",
-    "start",
-    "--foreground",
-  ];
+  return [process.execPath, cliEntrypoint, "server", "start", "--foreground"];
 }
 
-function serverInfoPath(pl4nDir: string): string {
-  return path.join(pl4nDir, "server.json");
+function serverInfoPath(globalDir: string): string {
+  return path.join(globalDir, "server.json");
 }
 
-async function readServerInfo(pl4nDir: string): Promise<ServerInfo | null> {
-  const infoPath = serverInfoPath(pl4nDir);
+async function readServerInfo(globalDir: string): Promise<ServerInfo | null> {
+  const infoPath = serverInfoPath(globalDir);
   try {
     const raw = await fs.readFile(infoPath, "utf8");
     const parsed = JSON.parse(raw) as ServerInfo;
@@ -91,32 +82,32 @@ async function readServerInfo(pl4nDir: string): Promise<ServerInfo | null> {
   }
 }
 
-async function writeServerInfo(pl4nDir: string, info: ServerInfo): Promise<void> {
-  await fs.mkdir(pl4nDir, { recursive: true });
-  await fs.writeFile(serverInfoPath(pl4nDir), `${JSON.stringify(info)}\n`, "utf8");
+async function writeServerInfo(globalDir: string, info: ServerInfo): Promise<void> {
+  await fs.mkdir(globalDir, { recursive: true });
+  await fs.writeFile(serverInfoPath(globalDir), `${JSON.stringify(info)}\n`, "utf8");
 }
 
-export async function updateServerActivity(pl4nDir: string, now = new Date()): Promise<void> {
-  const info = await readServerInfo(pl4nDir);
+export async function updateServerActivity(globalDir: string, now = new Date()): Promise<void> {
+  const info = await readServerInfo(globalDir);
   if (!info) {
     return;
   }
   info.last_activity = now.toISOString();
-  await writeServerInfo(pl4nDir, info);
+  await writeServerInfo(globalDir, info);
 }
 
 export async function isDaemonRunning(
-  pl4nDir: string,
-): Promise<{ running: boolean; port?: number; pid?: number }> {
-  const infoPath = serverInfoPath(pl4nDir);
-  const info = await readServerInfo(pl4nDir);
+  globalDir: string,
+): Promise<{ running: boolean; port?: number; pid?: number; bind?: string }> {
+  const infoPath = serverInfoPath(globalDir);
+  const info = await readServerInfo(globalDir);
   if (!info) {
     return { running: false };
   }
 
   try {
     process.kill(info.pid, 0);
-    return { running: true, port: info.port, pid: info.pid };
+    return { running: true, port: info.port, pid: info.pid, bind: info.bind };
   } catch {
     await fs.rm(infoPath, { force: true });
     return { running: false };
@@ -124,16 +115,27 @@ export async function isDaemonRunning(
 }
 
 export async function startDaemon(
-  pl4nDir: string,
+  globalDir: string,
   options: StartOptions = {},
 ): Promise<{ pid: number; port: number }> {
   const spawn = options.spawn ?? Bun.spawn;
   const portStart = options.port ?? DEFAULT_PORT;
   const port = await (options.findPort ?? findAvailablePort)(portStart);
-  const cmd = await resolveDaemonCommand(pl4nDir, port, options);
-  const env = { ...process.env, ...options.env, PL4N_DIR: pl4nDir, PL4N_PORT: String(port) };
-  const logFile = options.logFile ?? path.join(pl4nDir, "server.log");
-  await fs.mkdir(pl4nDir, { recursive: true });
+  const cmd = await resolveDaemonCommand(port, options);
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    ...options.env,
+    PL4N_HOME: globalDir,
+    PL4N_PORT: String(port),
+  };
+  if (options.workspace) {
+    env.PL4N_WORKSPACE = options.workspace;
+  }
+  if (options.bind) {
+    env.PL4N_BIND = options.bind;
+  }
+  const logFile = options.logFile ?? path.join(globalDir, "server.log");
+  await fs.mkdir(globalDir, { recursive: true });
   const logHandle = await fs.open(logFile, "a");
 
   const proc = spawn({
@@ -149,9 +151,10 @@ export async function startDaemon(
   await logHandle.close();
 
   const now = (options.now ?? (() => new Date()))();
-  await writeServerInfo(pl4nDir, {
+  await writeServerInfo(globalDir, {
     pid: proc.pid,
     port,
+    bind: options.bind,
     started_at: now.toISOString(),
     last_activity: now.toISOString(),
   });
@@ -159,9 +162,9 @@ export async function startDaemon(
   return { pid: proc.pid, port };
 }
 
-export async function stopDaemon(pl4nDir: string): Promise<boolean> {
-  const infoPath = serverInfoPath(pl4nDir);
-  const info = await readServerInfo(pl4nDir);
+export async function stopDaemon(globalDir: string): Promise<boolean> {
+  const infoPath = serverInfoPath(globalDir);
+  const info = await readServerInfo(globalDir);
   if (!info) {
     return false;
   }

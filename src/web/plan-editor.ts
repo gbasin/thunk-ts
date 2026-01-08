@@ -494,6 +494,352 @@ class DiagramNodeView {
   }
 }
 
+// Table NodeView - editable HTML table for GFM tables
+class TableNodeView {
+  dom: HTMLElement;
+  contentDOM: HTMLElement | null = null;
+
+  private headers: string[];
+  private rows: string[][];
+  private view: EditorView;
+  private getPos: () => number | undefined;
+  private tableEl: HTMLTableElement;
+  private getBaseline: () => { headers: string[]; rows: string[][] } | null;
+
+  constructor(
+    node: Node,
+    view: EditorView,
+    getPos: () => number | undefined,
+    getBaseline: () => { headers: string[]; rows: string[][] } | null,
+  ) {
+    this.view = view;
+    this.getPos = getPos;
+    this.getBaseline = getBaseline;
+    this.headers = [...(node.attrs.headers as string[])];
+    this.rows = (node.attrs.rows as string[][]).map((r) => [...r]);
+
+    this.dom = document.createElement("div");
+    this.dom.className = "table-widget";
+
+    this.tableEl = document.createElement("table");
+    this.dom.appendChild(this.tableEl);
+
+    this.render();
+  }
+
+  // Render cell content with character-level diff highlighting
+  private renderCellDiff(
+    cell: HTMLElement,
+    currentValue: string,
+    baselineValue: string | undefined,
+  ): void {
+    cell.innerHTML = "";
+
+    if (baselineValue === undefined) {
+      // New cell - highlight entire content
+      const span = document.createElement("span");
+      span.className = "diff-added";
+      span.textContent = currentValue;
+      cell.appendChild(span);
+      return;
+    }
+
+    if (currentValue === baselineValue) {
+      // No change
+      cell.textContent = currentValue;
+      return;
+    }
+
+    // Character-level diff
+    const changes = Diff.diffChars(baselineValue, currentValue);
+
+    for (const change of changes) {
+      if (change.added) {
+        const span = document.createElement("span");
+        span.className = "diff-added";
+        span.textContent = change.value;
+        cell.appendChild(span);
+      } else if (change.removed) {
+        const span = document.createElement("span");
+        span.className = "diff-removed";
+        span.textContent = change.value;
+        cell.appendChild(span);
+      } else {
+        cell.appendChild(document.createTextNode(change.value));
+      }
+    }
+  }
+
+  // Switch cell to edit mode (plain text, no diff spans)
+  private enterEditMode(cell: HTMLElement, rowIdx: number, colIdx: number): void {
+    const value = rowIdx === -1 ? this.headers[colIdx] : this.rows[rowIdx][colIdx];
+    cell.textContent = value;
+  }
+
+  // Switch cell back to display mode (with diff spans)
+  private exitEditMode(cell: HTMLElement, rowIdx: number, colIdx: number): void {
+    const baseline = this.getBaseline();
+    const currentValue = rowIdx === -1 ? this.headers[colIdx] : this.rows[rowIdx][colIdx];
+
+    if (!baseline) {
+      cell.textContent = currentValue;
+      return;
+    }
+
+    let baselineValue: string | undefined;
+    if (rowIdx === -1) {
+      baselineValue = baseline.headers[colIdx];
+    } else if (rowIdx < baseline.rows.length && colIdx < baseline.headers.length) {
+      baselineValue = baseline.rows[rowIdx]?.[colIdx];
+    }
+
+    this.renderCellDiff(cell, currentValue, baselineValue);
+  }
+
+  private render(): void {
+    this.tableEl.innerHTML = "";
+
+    // Get baseline for diff comparison
+    const baseline = this.getBaseline();
+
+    // Header row
+    const thead = document.createElement("thead");
+    const headerRow = document.createElement("tr");
+
+    for (let i = 0; i < this.headers.length; i++) {
+      const th = document.createElement("th");
+      th.contentEditable = "true";
+      th.dataset.col = String(i);
+
+      // Render with diff highlighting
+      const baselineHeader = baseline?.headers[i];
+      this.renderCellDiff(th, this.headers[i], baselineHeader);
+
+      th.addEventListener("focus", () => this.enterEditMode(th, -1, i));
+      th.addEventListener("blur", () => {
+        this.handleCellBlur(th, -1, i);
+        this.exitEditMode(th, -1, i);
+      });
+      th.addEventListener("keydown", (e) => this.handleKeyDown(e, -1, i));
+
+      headerRow.appendChild(th);
+    }
+
+    // Add column button in header
+    const addColTh = document.createElement("th");
+    addColTh.className = "table-add-col";
+    const addColBtn = document.createElement("button");
+    addColBtn.className = "table-add-btn";
+    addColBtn.textContent = "+";
+    addColBtn.title = "Add column";
+    addColBtn.addEventListener("click", () => this.addColumn());
+    addColTh.appendChild(addColBtn);
+    headerRow.appendChild(addColTh);
+
+    thead.appendChild(headerRow);
+    this.tableEl.appendChild(thead);
+
+    // Body rows
+    const tbody = document.createElement("tbody");
+    for (let rowIdx = 0; rowIdx < this.rows.length; rowIdx++) {
+      const row = this.rows[rowIdx];
+      const tr = document.createElement("tr");
+
+      for (let colIdx = 0; colIdx < row.length; colIdx++) {
+        const td = document.createElement("td");
+        td.contentEditable = "true";
+        td.dataset.row = String(rowIdx);
+        td.dataset.col = String(colIdx);
+
+        // Determine baseline value for this cell
+        let baselineValue: string | undefined;
+        if (baseline) {
+          if (rowIdx < baseline.rows.length && colIdx < baseline.headers.length) {
+            baselineValue = baseline.rows[rowIdx]?.[colIdx];
+          }
+          // undefined means new row or new column
+        }
+
+        // Render with diff highlighting
+        this.renderCellDiff(td, row[colIdx], baselineValue);
+
+        td.addEventListener("focus", () => this.enterEditMode(td, rowIdx, colIdx));
+        td.addEventListener("blur", () => {
+          this.handleCellBlur(td, rowIdx, colIdx);
+          this.exitEditMode(td, rowIdx, colIdx);
+        });
+        td.addEventListener("keydown", (e) => this.handleKeyDown(e, rowIdx, colIdx));
+
+        tr.appendChild(td);
+      }
+
+      // Delete row button
+      const deleteTd = document.createElement("td");
+      deleteTd.className = "table-row-actions";
+      const deleteBtn = document.createElement("button");
+      deleteBtn.className = "table-delete-btn";
+      deleteBtn.textContent = "×";
+      deleteBtn.title = "Delete row";
+      deleteBtn.addEventListener("click", () => this.deleteRow(rowIdx));
+      deleteTd.appendChild(deleteBtn);
+      tr.appendChild(deleteTd);
+
+      tbody.appendChild(tr);
+    }
+    this.tableEl.appendChild(tbody);
+
+    // Add row button
+    const tfoot = document.createElement("tfoot");
+    const addRowTr = document.createElement("tr");
+    const addRowTd = document.createElement("td");
+    addRowTd.colSpan = this.headers.length + 1;
+    addRowTd.className = "table-add-row";
+    const addRowBtn = document.createElement("button");
+    addRowBtn.className = "table-add-btn";
+    addRowBtn.textContent = "+ Add row";
+    addRowBtn.addEventListener("click", () => this.addRow());
+    addRowTd.appendChild(addRowBtn);
+    addRowTr.appendChild(addRowTd);
+    tfoot.appendChild(addRowTr);
+    this.tableEl.appendChild(tfoot);
+  }
+
+  private handleCellBlur(cell: HTMLElement, rowIdx: number, colIdx: number): void {
+    const newValue = cell.textContent || "";
+
+    if (rowIdx === -1) {
+      // Header cell
+      if (this.headers[colIdx] !== newValue) {
+        this.headers[colIdx] = newValue;
+        this.updateNode();
+      }
+    } else {
+      // Body cell
+      if (this.rows[rowIdx][colIdx] !== newValue) {
+        this.rows[rowIdx][colIdx] = newValue;
+        this.updateNode();
+      }
+    }
+  }
+
+  private handleKeyDown(e: KeyboardEvent, _rowIdx: number, _colIdx: number): void {
+    if (e.key === "Tab") {
+      e.preventDefault();
+      const cells = this.tableEl.querySelectorAll("th[contenteditable], td[contenteditable]");
+      const cellArray = Array.from(cells);
+      const currentIdx = cellArray.indexOf(e.target as Element);
+
+      let nextIdx: number;
+      if (e.shiftKey) {
+        nextIdx = currentIdx > 0 ? currentIdx - 1 : cellArray.length - 1;
+      } else {
+        nextIdx = currentIdx < cellArray.length - 1 ? currentIdx + 1 : 0;
+      }
+
+      const nextCell = cellArray[nextIdx] as HTMLElement;
+      nextCell?.focus();
+
+      // Select all text in the cell
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(nextCell);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    } else if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      (e.target as HTMLElement).blur();
+    }
+  }
+
+  private addRow(): void {
+    const newRow = this.headers.map(() => "");
+    this.rows.push(newRow);
+    this.updateNode();
+    this.render();
+
+    // Focus first cell of new row
+    requestAnimationFrame(() => {
+      const lastRow = this.tableEl.querySelector(
+        "tbody tr:last-child td[contenteditable]",
+      ) as HTMLElement;
+      lastRow?.focus();
+    });
+  }
+
+  private addColumn(): void {
+    this.headers.push("");
+    for (const row of this.rows) {
+      row.push("");
+    }
+    this.updateNode();
+    this.render();
+
+    // Focus new header cell
+    requestAnimationFrame(() => {
+      const headers = this.tableEl.querySelectorAll("thead th[contenteditable]");
+      const lastHeader = headers[headers.length - 1] as HTMLElement;
+      lastHeader?.focus();
+    });
+  }
+
+  private deleteRow(rowIdx: number): void {
+    if (this.rows.length <= 1) {
+      return; // Keep at least one row
+    }
+    this.rows.splice(rowIdx, 1);
+    this.updateNode();
+    this.render();
+  }
+
+  private updateNode(): void {
+    const pos = this.getPos();
+    if (pos === undefined) return;
+
+    const tr = this.view.state.tr.setNodeMarkup(pos, undefined, {
+      headers: this.headers,
+      rows: this.rows,
+    });
+    this.view.dispatch(tr);
+  }
+
+  stopEvent(_event: Event): boolean {
+    // Allow all events in the table (editing, clicking buttons)
+    return true;
+  }
+
+  ignoreMutation(): boolean {
+    // We manage our own mutations
+    return true;
+  }
+
+  update(node: Node): boolean {
+    if (node.type.name !== "table") return false;
+
+    // Check if data actually changed (avoid re-render loops)
+    const newHeaders = node.attrs.headers as string[];
+    const newRows = node.attrs.rows as string[][];
+
+    const headersMatch =
+      newHeaders.length === this.headers.length &&
+      newHeaders.every((h, i) => h === this.headers[i]);
+
+    const rowsMatch =
+      newRows.length === this.rows.length &&
+      newRows.every(
+        (row, i) =>
+          row.length === this.rows[i].length && row.every((cell, j) => cell === this.rows[i][j]),
+      );
+
+    if (!headersMatch || !rowsMatch) {
+      this.headers = [...newHeaders];
+      this.rows = newRows.map((r) => [...r]);
+      this.render();
+    }
+
+    return true;
+  }
+}
+
 export class PlanEditor {
   private container: HTMLElement;
   private view: EditorView;
@@ -542,6 +888,40 @@ export class PlanEditor {
       editable: () => !options.readOnly,
       nodeViews: {
         diagram: (node) => new DiagramNodeView(node, this.diagramViewer),
+        table: (node, view, getPos) => {
+          // Find table index in current document to match with baseline
+          const pos = getPos();
+          let tableIndex = 0;
+          if (pos !== undefined) {
+            view.state.doc.nodesBetween(0, pos, (n) => {
+              if (n.type.name === "table") tableIndex++;
+            });
+          }
+
+          // Create baseline getter that finds matching table by index
+          const getBaseline = (): { headers: string[]; rows: string[][] } | null => {
+            if (!baselineDoc) return null;
+
+            let currentIndex = 0;
+            let baselineTable: { headers: string[]; rows: string[][] } | null = null;
+
+            baselineDoc.forEach((n) => {
+              if (n.type.name === "table") {
+                if (currentIndex === tableIndex) {
+                  baselineTable = {
+                    headers: n.attrs.headers as string[],
+                    rows: n.attrs.rows as string[][],
+                  };
+                }
+                currentIndex++;
+              }
+            });
+
+            return baselineTable;
+          };
+
+          return new TableNodeView(node, view, getPos, getBaseline);
+        },
       },
       dispatchTransaction: (tr: Transaction) => {
         const newState = this.view.state.apply(tr);
