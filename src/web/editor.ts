@@ -9,6 +9,21 @@ function formatPhase(phase: string): string {
   return phase.replace(/_/g, " ");
 }
 
+type AgentStatusMap = Record<string, string>;
+
+function formatAgentStatus(agents: AgentStatusMap | undefined): string {
+  if (!agents || Object.keys(agents).length === 0) {
+    return "";
+  }
+  return Object.entries(agents)
+    .map(([id, status]) => {
+      const icon =
+        status === "working" ? "●" : status === "done" ? "✓" : status === "error" ? "✗" : "○";
+      return `${icon} ${id}`;
+    })
+    .join("  ");
+}
+
 class Pl4nEditor extends LitElement {
   static properties = {
     session: { type: String, attribute: "data-session" },
@@ -51,6 +66,7 @@ class Pl4nEditor extends LitElement {
   private continueConfirmExpanded = false;
   private activity: ActivityEvent[] = [];
   private eventSource: EventSource | null = null;
+  private agents: AgentStatusMap = {};
 
   createRenderRoot() {
     return this;
@@ -120,6 +136,13 @@ class Pl4nEditor extends LitElement {
     event.preventDefault();
     event.returnValue = "";
   };
+
+  private updateAgentStatusDisplay() {
+    const el = document.getElementById("agent-status");
+    if (el) {
+      el.textContent = formatAgentStatus(this.agents);
+    }
+  }
 
   private handleKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Escape" && this.showAutosaveDiff) {
@@ -240,6 +263,7 @@ class Pl4nEditor extends LitElement {
         hasAutosave: boolean;
         autosave: string | null;
         snapshot: string | null;
+        agents?: AgentStatusMap;
       };
       this.mtime = data.mtime;
       this.turn = data.turn;
@@ -249,6 +273,8 @@ class Pl4nEditor extends LitElement {
       this.autosaveContent = data.autosave;
       this.snapshotContent = data.snapshot;
       this.lastLoadedContent = data.content;
+      this.agents = data.agents ?? {};
+      this.updateAgentStatusDisplay();
 
       if (this.editor) {
         this.editor.setBaseline(data.content);
@@ -510,7 +536,13 @@ Try editing this text to see the diff highlighting in action!`;
         if (!response.ok) {
           return;
         }
-        const data = (await response.json()) as { turn: number; phase: string };
+        const data = (await response.json()) as {
+          turn: number;
+          phase: string;
+          agents?: AgentStatusMap;
+        };
+        this.agents = data.agents ?? {};
+        this.updateAgentStatusDisplay();
         if (data.phase === "user_review" && data.turn !== this.turn) {
           if (this.pollTimer !== null) {
             window.clearInterval(this.pollTimer);

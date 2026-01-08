@@ -6,6 +6,25 @@ import {
   openActivityStream,
 } from "./notifications.js";
 
+function formatRelativeTime(dateStr: string | null | undefined): string {
+  if (!dateStr) return "No activity";
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSecs = Math.floor(diffMs / 1000);
+  const diffMins = Math.floor(diffSecs / 60);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffSecs < 60) return "Just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays}d ago`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
+  return date.toLocaleDateString();
+}
+
 type ProjectItem = {
   project_id: string;
   name: string;
@@ -96,33 +115,28 @@ class Pl4nProjects extends LitElement {
     const projects = this.projects;
     return html`
       ${this.renderActivityBar()}
-      <div class="tui-list">
-        <div class="tui-list-header">
-          <div class="tui-list-cell">Project</div>
-          <div class="tui-list-cell">Sessions</div>
-          <div class="tui-list-cell">Updated</div>
-          <div class="tui-list-cell">Path</div>
-        </div>
+      <div class="tui-cards">
         ${
           projects.length === 0
-            ? html`<div class="tui-list-empty">No projects found.</div>`
+            ? html`<div class="tui-cards-empty">No projects found.</div>`
             : projects.map((project) => {
-                const sessions =
-                  project.session_count === undefined ? "—" : String(project.session_count);
-                const updated = project.updated_at
-                  ? new Date(project.updated_at).toLocaleString()
-                  : "No sessions yet";
+                const sessionCount = project.session_count ?? 0;
+                const sessionLabel = sessionCount === 1 ? "session" : "sessions";
+                const updated = formatRelativeTime(project.updated_at);
                 const link = this.token
                   ? `/projects/${project.project_id}/sessions?t=${this.token}`
                   : `/projects/${project.project_id}/sessions`;
                 return html`
-                  <a class="tui-list-row" href=${link}>
-                    <div class="tui-list-cell">
-                      <strong>${project.name}</strong>
+                  <a class="tui-card" href=${link}>
+                    <div class="tui-card-header">
+                      <span class="tui-card-title">${project.name}</span>
+                      <span class="tui-card-badge">${sessionCount}</span>
                     </div>
-                    <div class="tui-list-cell">${sessions}</div>
-                    <div class="tui-list-cell">${updated}</div>
-                    <div class="tui-list-cell wrap">${project.path}</div>
+                    <div class="tui-card-meta">
+                      <span>${sessionCount} ${sessionLabel}</span>
+                      <span class="tui-card-dot"></span>
+                      <span>${updated}</span>
+                    </div>
                   </a>
                 `;
               })

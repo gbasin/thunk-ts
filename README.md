@@ -83,7 +83,11 @@ auth:
   mode: strict
 ```
 
-For LAN + Tailscale access without tokens, use trusted mode with CIDR allowlist:
+Auth modes:
+- `strict` (default) requires a `t` query param token for UI and API requests (the CLI provides `edit_url` with tokens).
+- `trusted` skips token checks for allowlisted client IPs; other clients still need tokens.
+
+For LAN + Tailscale access without tokens, use trusted mode with a CIDR allowlist:
 
 ```yaml
 auth:
@@ -96,7 +100,11 @@ auth:
     - 100.64.0.0/10
 ```
 
+If `trusted_cidrs` is omitted, Pl4n defaults to the list shown above. CIDRs must be IPv4
+(`::1` and IPv4-mapped IPv6 are supported; other IPv6 ranges are not).
+
 You can also set a single workspace via `PL4N_WORKSPACE=/path/to/root`.
+Server env overrides: `PL4N_BIND=0.0.0.0`, `PL4N_HOME=/custom/.pl4n`.
 
 The server UI starts at `/projects` and links to project-scoped session lists and editors.
 
@@ -157,10 +165,9 @@ When you edit `turns/001.md` and call `continue`, agents receive your changes as
     └── swift-river/                  # Human-friendly session ID
         ├── meta.yaml                 # Task description, timestamp
         ├── state.yaml                # Turn, phase, agent_plan_ids mapping
-        │
-        ├── sunny-glade.md            # Agent's persistent plan (plan_id)
-        ├── amber-marsh.md            # Another agent's plan
-        │
+        ├── plans/
+        │   ├── sunny-glade.md         # Agent's persistent plan (plan_id)
+        │   └── amber-marsh.md         # Another agent's plan
         ├── turns/
         │   ├── 001.md                # Turn 1 synthesis (USER EDITS THIS)
         │   ├── 001.snapshot.md       # Pre-edit snapshot (for diffing)
@@ -172,11 +179,15 @@ When you edit `turns/001.md` and call `continue`, agents receive your changes as
         │   └── ...
         │
         ├── agents/
-        │   ├── sunny-glade.log       # Session-wide debug log (appended)
         │   ├── sunny-glade/
-        │   │   └── cli_session_id.txt    # For --resume
-        │   ├── amber-marsh.log
-        │   └── synthesizer.log
+        │   │   ├── agent.log         # Session-wide debug log (appended)
+        │   │   └── session.txt       # CLI session ID for --resume
+        │   ├── amber-marsh/
+        │   │   ├── agent.log
+        │   │   └── session.txt
+        │   └── synthesizer/
+        │       ├── agent.log
+        │       └── session.txt
         │
         └── PLAN.md                   # Symlink to approved turn
 ```

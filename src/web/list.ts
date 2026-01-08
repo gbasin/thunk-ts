@@ -30,6 +30,25 @@ function formatPhase(phase: string): string {
   return phase.replace(/_/g, " ");
 }
 
+function formatRelativeTime(dateStr: string | null | undefined): string {
+  if (!dateStr) return "No activity";
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSecs = Math.floor(diffMs / 1000);
+  const diffMins = Math.floor(diffSecs / 60);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffSecs < 60) return "Just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays}d ago`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
+  return date.toLocaleDateString();
+}
+
 function truncateTask(task: string): string {
   // Extract first meaningful paragraph (skip headings)
   const lines = task.split("\n");
@@ -147,39 +166,32 @@ class Pl4nList extends LitElement {
     const sessions = this.sessions;
     return html`
       ${this.renderActivityBar()}
-      <div class="tui-list">
-        <div class="tui-list-header">
-          <div class="tui-list-cell">Session</div>
-          <div class="tui-list-cell">Phase</div>
-          <div class="tui-list-cell">Updated</div>
-          <div class="tui-list-cell">Action</div>
-        </div>
+      <div class="tui-cards">
         ${
           sessions.length === 0
-            ? html`<div class="tui-list-empty">No sessions found.</div>`
+            ? html`<div class="tui-cards-empty">No sessions found.</div>`
             : sessions.map((session) => {
                 const approved = session.phase === "approved";
-                return html`
-                  <div class="tui-list-row">
-                    <div class="tui-list-cell wrap">
-                      <strong>${session.session_id}</strong>
-                      <div class="tui-list-sub">${truncateTask(session.task)}</div>
-                    </div>
-                    <div class="tui-list-cell">${formatPhase(session.phase)}</div>
-                    <div class="tui-list-cell">
-                      ${new Date(session.updated_at).toLocaleString()}
-                    </div>
-                    <div class="tui-list-cell">
-                      ${
-                        session.edit_path
-                          ? html`<a class="list-link" href=${session.edit_path}>Open</a>`
-                          : approved
-                            ? html`<span class="tui-list-sub">Locked</span>`
-                            : html`<span class="tui-list-sub">Pending</span>`
-                      }
-                    </div>
+                const canEdit = !!session.edit_path;
+                const updated = formatRelativeTime(session.updated_at);
+                const phaseLabel = formatPhase(session.phase);
+
+                const cardContent = html`
+                  <div class="tui-card-header">
+                    <span class="tui-card-title">${session.session_id}</span>
+                    <span class="tui-card-badge ${approved ? "approved" : ""}">${phaseLabel}</span>
+                  </div>
+                  <div class="tui-card-task">${truncateTask(session.task)}</div>
+                  <div class="tui-card-meta">
+                    <span>Turn ${session.turn}</span>
+                    <span class="tui-card-dot"></span>
+                    <span>${updated}</span>
                   </div>
                 `;
+
+                return canEdit
+                  ? html`<a class="tui-card" href=${session.edit_path}>${cardContent}</a>`
+                  : html`<div class="tui-card disabled">${cardContent}</div>`;
               })
         }
       </div>

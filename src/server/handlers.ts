@@ -475,6 +475,7 @@ export function createHandlers(context: HandlerContext) {
         hasAutosave,
         autosave: autosaveContent,
         snapshot: snapshotContent,
+        agents: session.agents,
       });
     },
 
@@ -651,7 +652,11 @@ export function createHandlers(context: HandlerContext) {
         return sessionNotFound();
       }
 
-      return jsonResponse(200, { turn: session.turn, phase: session.phase });
+      return jsonResponse(200, {
+        turn: session.turn,
+        phase: session.phase,
+        agents: session.agents,
+      });
     },
 
     async handleActivity(req: Request): Promise<Response> {

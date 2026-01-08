@@ -62,6 +62,9 @@ pl4n status --session <id>          # Check progress
 pl4n list                           # List all sessions
 pl4n clean --session <id>           # Remove session
 pl4n diff --session <id>            # Show changes between turns
+pl4n server start|stop|status       # Manage web editor server
+Server auth defaults to strict `t=` query param tokens; trusted mode is configured via
+`~/.pl4n/config.yaml` with IPv4 `auth.trusted_cidrs`.
 
 ## Architecture
 
@@ -72,6 +75,8 @@ src/
 ├── orchestrator.ts # Turn orchestration (draft → peer review → synthesis)
 ├── prompts.ts      # Agent prompt templates
 ├── names.ts        # Human-friendly name generator
+├── server/         # Web editor server + auth
+└── web/            # Editor UI assets
 └── adapters/
     ├── base.ts     # AgentAdapter interface
     ├── claude.ts   # Claude Code adapter (with session continuation)

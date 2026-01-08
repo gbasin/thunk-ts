@@ -16,7 +16,6 @@
   <body>
     <div class="tui-page">
       <div class="tui-title-bar">
-        <span class="title">pl4n</span>
         <span class="tui-nav">
           <a class="tui-nav-link" id="nav-projects" href="#">Projects</a>
           <a class="tui-nav-link active" id="nav-sessions" href="#">Sessions</a>
@@ -27,7 +26,6 @@
           <span class="font-size" id="font-size">10</span>
           <button class="font-btn" id="font-up" title="Increase font size">+</button>
         </span>
-        <span class="clock" id="clock">--:--:--</span>
       </div>
 
       <div class="tui-info-bar">
@@ -65,16 +63,6 @@
       window.__PL4N_LIST__ = __LIST_DATA__;
     </script>
     <script>
-      function updateClock() {
-        const now = new Date();
-        const h = String(now.getHours()).padStart(2, '0');
-        const m = String(now.getMinutes()).padStart(2, '0');
-        const s = String(now.getSeconds()).padStart(2, '0');
-        document.getElementById('clock').textContent = `${h}:${m}:${s}`;
-      }
-      updateClock();
-      setInterval(updateClock, 1000);
-
       let fontSize = 10;
       const minFontSize = 4;
       const maxFontSize = 24;
