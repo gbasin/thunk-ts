@@ -10,15 +10,7 @@
  * - Tap-to-expand code block viewer for diagrams
  */
 
-import * as Diff from "diff";
-
-// Type augmentation for diffChars which exists but isn't in @types/diff
-declare module "diff" {
-  export function diffChars(
-    oldStr: string,
-    newStr: string,
-  ): Array<{ value: string; added?: boolean; removed?: boolean }>;
-}
+import { buildLineDiff } from "./diff-render.js";
 
 export interface DiffTextareaOptions {
   /** Initial content */
@@ -325,7 +317,7 @@ export class DiffTextarea {
 
   private updateHighlights() {
     const currentContent = this.textarea.value;
-    const lineChanges = Diff.diffLines(this.baseline, currentContent);
+    const lineChanges = buildLineDiff(this.baseline, currentContent);
 
     // Reset code blocks
     this.codeBlocks = [];
@@ -336,29 +328,25 @@ export class DiffTextarea {
     while (i < lineChanges.length) {
       const change = lineChanges[i];
 
-      if (change.removed && lineChanges[i + 1]?.added) {
+      if (change.type === "modify" && change.chars) {
         // Modification: do char-level diff
-        const removed = change;
-        const added = lineChanges[i + 1];
-
-        const charChanges = Diff.diffChars(removed.value, added.value);
         let lineHtml = "";
 
-        for (const charChange of charChanges) {
-          if (charChange.added) {
+        for (const charChange of change.chars) {
+          if (charChange.type === "add") {
             lineHtml += `<span class="diff-char-added">${this.escapeHtml(charChange.value)}</span>`;
-          } else if (!charChange.removed) {
+          } else if (charChange.type === "context") {
             lineHtml += this.escapeHtml(charChange.value);
           }
         }
 
         html += `<span class="diff-line-modified">${lineHtml}</span>`;
-        i += 2;
-      } else if (change.added) {
+        i += 1;
+      } else if (change.type === "add") {
         // Pure addition - check for code blocks
         html += this.renderWithCodeBlocks(change.value, "diff-line-added");
         i++;
-      } else if (change.removed) {
+      } else if (change.type === "remove") {
         html += `<span class="diff-line-deleted-marker"></span>`;
         i++;
       } else {

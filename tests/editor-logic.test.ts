@@ -11,7 +11,7 @@ import { describe, expect, it } from "bun:test";
 interface EditorState {
   dirty: boolean;
   saving: boolean;
-  hasAutosave: boolean;
+  showAutosaveBanner: boolean;
   autosaveContent: string | null;
   autosaveTimer: number | null;
   statusMessage: string;
@@ -21,34 +21,18 @@ function createEditorState(): EditorState {
   return {
     dirty: false,
     saving: false,
-    hasAutosave: false,
+    showAutosaveBanner: false,
     autosaveContent: null,
     autosaveTimer: null,
     statusMessage: "Ready",
   };
 }
 
-// Simulates save success (BUG: doesn't clear autosave timer)
-function onSaveSuccess(state: EditorState): void {
+function onSaveSuccess(state: EditorState, clearTimeout: (id: number) => void): void {
   state.dirty = false;
-  state.hasAutosave = false;
+  state.showAutosaveBanner = false;
   state.autosaveContent = null;
   state.statusMessage = "Saved";
-  // BUG: autosaveTimer should be cleared here
-  // FIX: Uncomment the following lines:
-  // if (state.autosaveTimer !== null) {
-  //   clearTimeout(state.autosaveTimer);
-  //   state.autosaveTimer = null;
-  // }
-}
-
-// Simulates save success with the fix
-function onSaveSuccessFixed(state: EditorState, clearTimeout: (id: number) => void): void {
-  state.dirty = false;
-  state.hasAutosave = false;
-  state.autosaveContent = null;
-  state.statusMessage = "Saved";
-  // FIX: Clear the autosave timer
   if (state.autosaveTimer !== null) {
     clearTimeout(state.autosaveTimer);
     state.autosaveTimer = null;
@@ -57,9 +41,21 @@ function onSaveSuccessFixed(state: EditorState, clearTimeout: (id: number) => vo
 
 // Simulates autosave completing
 function onAutosaveComplete(state: EditorState, content: string): void {
-  state.hasAutosave = true;
-  state.autosaveContent = content;
+  if (!state.showAutosaveBanner) {
+    state.autosaveContent = content;
+  }
   state.statusMessage = "Autosaved";
+}
+
+function onLoadWithAutosave(state: EditorState, content: string | null): void {
+  state.showAutosaveBanner = Boolean(content);
+  state.autosaveContent = content;
+}
+
+function onDiscardAutosave(state: EditorState): void {
+  state.showAutosaveBanner = false;
+  state.autosaveContent = null;
+  state.statusMessage = "Autosave discarded";
 }
 
 describe("Editor state management", () => {
@@ -76,8 +72,8 @@ describe("Editor state management", () => {
       state.dirty = true;
       state.statusMessage = "Unsaved changes";
 
-      // Simulate: save succeeds with the fix
-      onSaveSuccessFixed(state, mockClearTimeout);
+      // Simulate: save succeeds
+      onSaveSuccess(state, mockClearTimeout);
 
       // Verify timer was cleared
       expect(clearedTimers).toContain(123);
@@ -86,25 +82,35 @@ describe("Editor state management", () => {
       expect(state.statusMessage).toBe("Saved");
     });
 
-    it("BUG: autosave timer fires after save without fix", () => {
+    it("autosave should not show recovery banner during active edits", () => {
       const state = createEditorState();
 
-      // Simulate: edit triggers autosave scheduling
-      state.autosaveTimer = 456;
-      state.dirty = true;
+      onAutosaveComplete(state, "draft");
 
-      // Simulate: save succeeds (without fix - doesn't clear timer)
-      onSaveSuccess(state);
+      expect(state.showAutosaveBanner).toBe(false);
+      expect(state.autosaveContent).toBe("draft");
+      expect(state.statusMessage).toBe("Autosaved");
+    });
 
-      // BUG: Timer is still set (wasn't cleared)
-      expect(state.autosaveTimer).toBe(456);
+    it("load with autosave should show banner and freeze snapshot", () => {
+      const state = createEditorState();
 
-      // If autosave fires after save, it would set hasAutosave = true
-      // This is confusing because we just saved!
-      onAutosaveComplete(state, "content");
+      onLoadWithAutosave(state, "recovery");
+      onAutosaveComplete(state, "new draft");
 
-      expect(state.hasAutosave).toBe(true);
-      expect(state.statusMessage).toBe("Autosaved"); // Confusing!
+      expect(state.showAutosaveBanner).toBe(true);
+      expect(state.autosaveContent).toBe("recovery");
+    });
+
+    it("discard autosave should clear banner and snapshot", () => {
+      const state = createEditorState();
+
+      onLoadWithAutosave(state, "recovery");
+      onDiscardAutosave(state);
+
+      expect(state.showAutosaveBanner).toBe(false);
+      expect(state.autosaveContent).toBeNull();
+      expect(state.statusMessage).toBe("Autosave discarded");
     });
 
     it("beforeunload check should not trigger after save", () => {
@@ -114,7 +120,7 @@ describe("Editor state management", () => {
       state.dirty = true;
 
       // Simulate: save succeeds
-      onSaveSuccessFixed(state, () => {});
+      onSaveSuccess(state, () => {});
 
       // beforeunload should NOT trigger because dirty is false
       const shouldWarn = state.dirty;

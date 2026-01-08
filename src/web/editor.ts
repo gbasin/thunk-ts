@@ -1,9 +1,8 @@
 import { LitElement, html } from "lit";
 import * as Diff from "diff";
 import { PlanEditor } from "./plan-editor.js";
+import { buildLineDiff, type LineChange } from "./diff-render.js";
 import { type ActivityEvent, formatActivity, openActivityStream } from "./notifications.js";
-
-type Change = Diff.Change;
 
 function formatPhase(phase: string): string {
   return phase.replace(/_/g, " ");
@@ -58,12 +57,13 @@ class Pl4nEditor extends LitElement {
   private autosaveTimer: number | null = null;
   private pollTimer: number | null = null;
   private autosaveContent: string | null = null;
-  private hasAutosave = false;
+  private showAutosaveBanner = false;
   private showAutosaveDiff = false;
   private lastLoadedContent = "";
   private snapshotContent: string | null = null;
   private showContinueConfirm = false;
   private continueConfirmExpanded = false;
+  private showChangesDiff = false;
   private activity: ActivityEvent[] = [];
   private eventSource: EventSource | null = null;
   private agents: AgentStatusMap = {};
@@ -146,8 +146,12 @@ class Pl4nEditor extends LitElement {
 
   private handleKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Escape" && this.showAutosaveDiff) {
-      this.showAutosaveDiff = false;
-      this.requestUpdate();
+      this.closeAutosaveDiff();
+      return;
+    }
+
+    if (event.key === "Escape" && this.showChangesDiff) {
+      this.closeChangesDiff();
       return;
     }
 
@@ -197,7 +201,6 @@ class Pl4nEditor extends LitElement {
       if (!response.ok) {
         throw new Error("Autosave failed");
       }
-      this.hasAutosave = true;
       this.autosaveContent = content;
       this.statusMessage = "Autosaved";
       this.requestUpdate();
@@ -207,7 +210,7 @@ class Pl4nEditor extends LitElement {
     }
   }
 
-  private async discardAutosave() {
+  private async discardAutosave(options: { clearSnapshot?: boolean } = {}) {
     try {
       const response = await fetch(
         `/api/projects/${this.projectId}/autosave/${this.session}?t=${this.token}`,
@@ -218,8 +221,11 @@ class Pl4nEditor extends LitElement {
       if (!response.ok) {
         throw new Error("Autosave discard failed");
       }
-      this.hasAutosave = false;
+      this.showAutosaveBanner = false;
       this.autosaveContent = null;
+      if (options.clearSnapshot) {
+        this.snapshotContent = null;
+      }
       this.statusMessage = "Autosave discarded";
       this.requestUpdate();
     } catch {
@@ -234,7 +240,7 @@ class Pl4nEditor extends LitElement {
     }
     this.editor.setValue(this.autosaveContent);
     this.dirty = true;
-    await this.discardAutosave();
+    await this.discardAutosave({ clearSnapshot: false });
     this.statusMessage = "Autosave restored";
     this.requestUpdate();
   }
@@ -269,7 +275,7 @@ class Pl4nEditor extends LitElement {
       this.turn = data.turn;
       this.phase = data.phase;
       this.readOnly = data.readOnly;
-      this.hasAutosave = data.hasAutosave;
+      this.showAutosaveBanner = data.hasAutosave;
       this.autosaveContent = data.autosave;
       this.snapshotContent = data.snapshot;
       this.lastLoadedContent = data.content;
@@ -382,7 +388,7 @@ Try editing this text to see the diff highlighting in action!`;
         const payload = (await response.json()) as { mtime: number };
         this.mtime = payload.mtime;
         this.dirty = false;
-        this.hasAutosave = false;
+        this.showAutosaveBanner = false;
         this.autosaveContent = null;
         // Clear any pending autosave timer to prevent it from firing after save
         if (this.autosaveTimer !== null) {
@@ -571,39 +577,114 @@ Try editing this text to see the diff highlighting in action!`;
     this.editor?.redo();
   }
 
+  private openAutosaveDiff() {
+    this.showAutosaveDiff = true;
+    this.requestUpdate();
+  }
+
+  private closeAutosaveDiff() {
+    this.showAutosaveDiff = false;
+    this.requestUpdate();
+  }
+
   private showDiff() {
     if (!this.editor) {
       return;
     }
-    const baseline = this.snapshotContent ?? this.lastLoadedContent;
-    this.editor.showDiffAgainst(baseline);
+    this.showChangesDiff = true;
+    this.requestUpdate();
+  }
+
+  private closeChangesDiff() {
+    this.showChangesDiff = false;
+    this.requestUpdate();
   }
 
   private renderAutosaveDiffModal() {
     if (!this.showAutosaveDiff || !this.autosaveContent) {
       return null;
     }
-    const diff = Diff.diffLines(this.lastLoadedContent, this.autosaveContent);
+    const diff = buildLineDiff(this.lastLoadedContent, this.autosaveContent);
     return html`
-      <div class="modal-backdrop" @click=${() => (this.showAutosaveDiff = false)}>
+      <div class="modal-backdrop" @click=${() => this.closeAutosaveDiff()}>
         <div class="modal" @click=${(event: Event) => event.stopPropagation()}>
           <div class="header">
             <h2>Autosave Diff</h2>
-            <button class="button secondary" @click=${() => (this.showAutosaveDiff = false)}>
+            <button class="button secondary" @click=${() => this.closeAutosaveDiff()}>
               Close
             </button>
           </div>
-          ${diff.map((part: Change) => {
-            const cls = part.added
-              ? "diff-line diff-add"
-              : part.removed
-                ? "diff-line diff-remove"
-                : "diff-line";
-            return html`<div class=${cls}>${part.value}</div>`;
-          })}
+          ${this.renderDiffLines(diff)}
         </div>
       </div>
     `;
+  }
+
+  private renderChangesDiffModal() {
+    if (!this.showChangesDiff || !this.editor) {
+      return null;
+    }
+    const baseline = this.snapshotContent ?? this.lastLoadedContent;
+    const current = this.editor.getValue();
+    const diff = buildLineDiff(baseline, current);
+    return html`
+      <div class="modal-backdrop" @click=${() => this.closeChangesDiff()}>
+        <div class="modal" @click=${(event: Event) => event.stopPropagation()}>
+          <div class="header">
+            <h2>Changes</h2>
+            <button class="button secondary" @click=${() => this.closeChangesDiff()}>
+              Close
+            </button>
+          </div>
+          ${this.renderDiffLines(diff)}
+        </div>
+      </div>
+    `;
+  }
+
+  private renderDiffLines(diff: LineChange[]) {
+    return diff.map((part) => {
+      const cls =
+        part.type === "add"
+          ? "diff-line diff-add"
+          : part.type === "remove"
+            ? "diff-line diff-remove"
+            : "diff-line";
+      if (part.type === "modify" && part.chars) {
+        const lines: Array<Array<unknown>> = [[]];
+        const pushText = (value: string, type: "add" | "remove" | "context") => {
+          const parts = value.split("\n");
+          for (let i = 0; i < parts.length; i++) {
+            if (i > 0) {
+              lines.push([]);
+            }
+            if (!parts[i]) {
+              continue;
+            }
+            if (type === "add") {
+              lines[lines.length - 1].push(html`<span class="diff-added">${parts[i]}</span>`);
+            } else if (type === "remove") {
+              lines[lines.length - 1].push(
+                html`<span class="diff-inline-removed">${parts[i]}</span>`,
+              );
+            } else {
+              lines[lines.length - 1].push(parts[i]);
+            }
+          }
+        };
+
+        for (const charChange of part.chars) {
+          pushText(charChange.value, charChange.type);
+        }
+
+        if (lines.length > 1 && lines[lines.length - 1].length === 0) {
+          lines.pop();
+        }
+
+        return lines.map((line) => html`<div class=${cls}>${line}</div>`);
+      }
+      return html`<div class=${cls}>${part.value}</div>`;
+    });
   }
 
   private renderContinueConfirmPanel() {
@@ -743,16 +824,18 @@ Try editing this text to see the diff highlighting in action!`;
         ${this.renderActivityBar()}
 
         ${
-          this.hasAutosave
+          this.showAutosaveBanner
             ? html`
               <div class="editor-banner">
-                <span>Autosave recovery available.</span>
+                <span>Autosave recovery available. Discard resets the recovery snapshot.</span>
                 <div class="banner-actions">
-                  <button class="button secondary" @click=${() => (this.showAutosaveDiff = true)}>
+                  <button class="button secondary" @click=${() => this.openAutosaveDiff()}>
                     View diff
                   </button>
                   <button class="button" @click=${() => this.restoreAutosave()}>Restore</button>
-                  <button class="button" @click=${() => this.discardAutosave()}>Discard</button>
+                  <button class="button" @click=${() => this.discardAutosave({ clearSnapshot: true })}>
+                    Discard
+                  </button>
                 </div>
               </div>
             `
@@ -793,6 +876,7 @@ Try editing this text to see the diff highlighting in action!`;
         </div>
       </div>
       ${this.renderAutosaveDiffModal()}
+      ${this.renderChangesDiffModal()}
     `;
   }
 

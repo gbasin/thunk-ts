@@ -339,108 +339,6 @@ class DiagramViewer {
   }
 }
 
-// Diff viewer management
-class DiffViewer {
-  private backdrop: HTMLElement;
-  private content: HTMLElement;
-
-  constructor() {
-    this.backdrop = document.createElement("div");
-    this.backdrop.className = "diff-viewer-backdrop";
-
-    const container = document.createElement("div");
-    container.className = "diff-viewer-container";
-
-    const header = document.createElement("div");
-    header.className = "diff-viewer-header";
-
-    const title = document.createElement("h2");
-    title.textContent = "Changes";
-
-    const closeBtn = document.createElement("button");
-    closeBtn.className = "diff-viewer-close";
-    closeBtn.textContent = "×";
-    closeBtn.addEventListener("click", () => this.close());
-
-    header.appendChild(title);
-    header.appendChild(closeBtn);
-
-    this.content = document.createElement("div");
-    this.content.className = "diff-viewer-content";
-
-    container.appendChild(header);
-    container.appendChild(this.content);
-    this.backdrop.appendChild(container);
-
-    this.backdrop.addEventListener("click", (e) => {
-      if (e.target === this.backdrop) this.close();
-    });
-
-    // Prevent scroll pass-through on touch devices
-    this.backdrop.addEventListener(
-      "touchmove",
-      (e) => {
-        // Only prevent if not scrolling inside the content
-        if (!container.contains(e.target as globalThis.Node)) {
-          e.preventDefault();
-        }
-      },
-      { passive: false },
-    );
-
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && this.backdrop.classList.contains("open")) {
-        this.close();
-      }
-    });
-
-    document.body.appendChild(this.backdrop);
-  }
-
-  private escapeHtml(text: string): string {
-    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  }
-
-  show(baseText: string, currentText: string): void {
-    if (baseText === currentText) {
-      this.content.innerHTML = '<div class="diff-no-changes">No changes</div>';
-    } else {
-      const changes = Diff.diffLines(baseText, currentText);
-      let html = "";
-
-      for (const change of changes) {
-        const lines = change.value.split("\n");
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i];
-          if (i === lines.length - 1 && line === "") continue;
-
-          if (change.added) {
-            html += `<div class="diff-line-add">+ ${this.escapeHtml(line)}</div>`;
-          } else if (change.removed) {
-            html += `<div class="diff-line-remove">- ${this.escapeHtml(line)}</div>`;
-          } else {
-            html += `<div class="diff-line-context">  ${this.escapeHtml(line)}</div>`;
-          }
-        }
-      }
-
-      this.content.innerHTML = html;
-    }
-
-    this.backdrop.classList.add("open");
-    document.body.style.overflow = "hidden";
-  }
-
-  close(): void {
-    this.backdrop.classList.remove("open");
-    document.body.style.overflow = "";
-  }
-
-  destroy(): void {
-    this.backdrop.remove();
-  }
-}
-
 // Diagram NodeView
 class DiagramNodeView {
   dom: HTMLElement;
@@ -846,7 +744,6 @@ export class PlanEditor {
   private baseline: string = "";
   private options: PlanEditorOptions;
   private diagramViewer: DiagramViewer;
-  private diffViewer: DiffViewer;
 
   constructor(parent: HTMLElement, options: PlanEditorOptions = {}) {
     this.options = options;
@@ -854,7 +751,6 @@ export class PlanEditor {
 
     // Create viewers
     this.diagramViewer = new DiagramViewer();
-    this.diffViewer = new DiffViewer();
 
     // Create container
     this.container = document.createElement("div");
@@ -987,22 +883,10 @@ export class PlanEditor {
     return redo(this.view.state, this.view.dispatch);
   }
 
-  /** Show diff viewer modal against a specific baseline */
-  showDiffAgainst(baseline: string): void {
-    const currentText = this.getValue();
-    this.diffViewer.show(baseline, currentText);
-  }
-
-  /** Show diff viewer modal against the editor baseline */
-  showDiff(): void {
-    this.showDiffAgainst(this.baseline);
-  }
-
   /** Destroy and clean up */
   destroy(): void {
     this.view.destroy();
     this.container.remove();
     this.diagramViewer.destroy();
-    this.diffViewer.destroy();
   }
 }

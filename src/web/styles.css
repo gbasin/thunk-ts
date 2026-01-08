@@ -866,6 +866,14 @@ pl4n-list {
   z-index: 0;
 }
 
+.diff-inline-removed {
+  background: rgba(220, 80, 80, 0.1);
+  color: rgba(170, 50, 50, 0.9);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  border-radius: 2px;
+}
+
 /* Full-screen diagram viewer */
 .diagram-viewer-backdrop {
   position: fixed;
