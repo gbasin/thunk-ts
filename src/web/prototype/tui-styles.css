@@ -4,26 +4,26 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 :root {
-  /* Light TUI palette - Paper & Ink */
+  /* Light TUI palette - Paper & Ink (improved contrast) */
   --tui-bg: #f5f3ef;
   --tui-bg-panel: #eae7e1;
   --tui-fg: #2d2a26;
-  --tui-fg-dim: #6b665e;
+  --tui-fg-dim: #524e48; /* darkened for AA contrast */
   --tui-fg-bright: #1a1816;
   --tui-highlight: #e0dcd4;
   --tui-selection: #c9d4e8;
-  --tui-border: #9b958a;
-  --tui-accent: #0066cc;
-  --tui-error: #c53030;
-  --tui-success: #2e7d32;
+  --tui-border: #85807a; /* slightly darker for definition */
+  --tui-accent: #1a5490; /* warmer blue, matches paper */
+  --tui-error: #b91c1c; /* stronger red */
+  --tui-success: #166534; /* stronger green */
 
-  /* Typography - use reliable system monospace fonts */
+  /* Typography */
   --tui-font: "SF Mono", "Menlo", "Monaco", "Consolas", "Liberation Mono", "Courier New", monospace;
   --tui-font-size: 13px;
-  --tui-line-height: 1.5;
+  --tui-line-height: 1.4; /* tighter for TUI feel */
 
-  /* Scanline effect - subtle for light mode */
-  --scanline-opacity: 0.015;
+  /* iOS safe area */
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* Dark mode variant (phosphor green) */
@@ -170,14 +170,22 @@ body {
 
 .tui-panel-header {
   position: absolute;
-  top: -0.7em;
+  top: -0.8em;
   left: 1ch;
-  padding: 0 1ch;
-  background: var(--tui-bg);
-  color: var(--tui-fg-bright);
+  padding: 2px 1.5ch;
+  background: var(--tui-fg);
+  color: var(--tui-bg);
   font-weight: bold;
   z-index: 1;
   font-size: var(--tui-font-size);
+  letter-spacing: 0.02em;
+}
+
+/* Modified indicator */
+.tui-panel-header.modified::after {
+  content: " *";
+  color: var(--tui-accent);
+  opacity: 0.8;
 }
 
 .tui-panel-content {
@@ -194,7 +202,7 @@ body {
 .tui-info-bar {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5ch 2ch;
+  gap: 0.5ch 0;
   padding: 2px 1ch;
   background: var(--tui-bg-panel);
   border-top: 1px solid var(--tui-border);
@@ -206,12 +214,22 @@ body {
 
 .tui-info-item {
   display: flex;
+  align-items: baseline;
   gap: 0.5ch;
   white-space: nowrap;
 }
 
+/* Add separator between info items */
+.tui-info-item:not(:last-child)::after {
+  content: "│";
+  margin-left: 1ch;
+  margin-right: 1ch;
+  color: var(--tui-border);
+}
+
 .tui-info-label {
   color: var(--tui-fg-dim);
+  font-weight: bold;
 }
 
 .tui-info-value {
@@ -353,10 +371,10 @@ pl4n-editor {
 /* Footer with action buttons - TUI styled */
 .editor-shell .footer {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
+  flex-direction: row;
   align-items: center;
-  gap: 8px;
+  justify-content: flex-end;
+  gap: 12px;
   padding: 8px 1ch;
   border-top: 1px solid var(--tui-border);
   background: var(--tui-bg-panel);
@@ -365,43 +383,80 @@ pl4n-editor {
 .editor-shell .footer .status {
   color: var(--tui-fg-dim);
   font-size: 12px;
+  margin-right: auto; /* push to left */
+}
+
+.editor-shell .footer .status.error {
+  background: var(--tui-error);
+  color: #fff;
+  padding: 2px 6px;
+  font-weight: bold;
 }
 
 .editor-shell .footer .button-row {
   display: flex;
-  gap: 8px;
+  gap: 10px;
 }
 
+/* TUI bracket-style buttons */
 .editor-shell .footer .button {
   background: var(--tui-bg);
   color: var(--tui-fg);
-  border: 1px solid var(--tui-border);
+  border: none;
   border-radius: 0;
   font-family: var(--tui-font);
-  font-size: 12px;
-  padding: 4px 12px;
-  min-height: auto;
+  font-size: 13px;
+  padding: 4px 4px;
+  min-height: 32px; /* comfortable but not too tall */
   cursor: pointer;
-  transition: background 0.1s, border-color 0.1s;
+  transition: background 0.1s;
+}
+
+.editor-shell .footer .button::before {
+  content: "[ ";
+  color: var(--tui-border);
+}
+
+.editor-shell .footer .button::after {
+  content: " ]";
+  color: var(--tui-border);
 }
 
 .editor-shell .footer .button:hover {
   background: var(--tui-highlight);
-  border-color: var(--tui-fg);
+}
+
+.editor-shell .footer .button:hover::before,
+.editor-shell .footer .button:hover::after {
+  color: var(--tui-fg);
 }
 
 .editor-shell .footer .button.primary {
   background: var(--tui-fg);
   color: var(--tui-bg);
-  border-color: var(--tui-fg);
+  box-shadow: none;
+  outline: none;
+}
+
+.editor-shell .footer .button.primary::before,
+.editor-shell .footer .button.primary::after {
+  color: var(--tui-bg);
+  opacity: 0.6;
 }
 
 .editor-shell .footer .button.primary:hover {
   background: var(--tui-fg-bright);
+  box-shadow: none;
+}
+
+.editor-shell .footer .button.primary:focus {
+  box-shadow: none;
+  outline: 1px solid var(--tui-bg);
+  outline-offset: -2px;
 }
 
 .editor-shell .footer .button.secondary {
-  border-style: solid;
+  /* secondary uses default styling */
 }
 
 .editor-shell .footer .button:disabled {
@@ -490,13 +545,26 @@ pl4n-editor {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 2px 1ch;
+  padding: 4px 1ch;
+  padding-bottom: calc(4px + var(--safe-area-bottom, 0px));
   background: var(--tui-fg);
   color: var(--tui-bg);
-  min-height: 1.4em;
+  min-height: 1.6em;
   flex-shrink: 0;
   flex-wrap: wrap;
   gap: 0 2ch;
+  position: relative;
+}
+
+/* Extend dark background below status bar to cover iOS safe area */
+.tui-status-bar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: env(safe-area-inset-bottom, 50px);
+  background: inherit;
 }
 
 .tui-status-left {
@@ -704,16 +772,18 @@ pl4n-editor {
 
 @media (max-width: 600px) {
   :root {
-    --tui-font-size: 13px;
+    --tui-font-size: 15px; /* larger for mobile readability */
   }
 
   .tui-title-bar {
-    font-size: 12px;
+    font-size: 13px;
+    min-height: 2em;
   }
 
   .tui-info-bar {
-    font-size: 11px;
-    padding: 4px 1ch;
+    font-size: 12px;
+    padding: 6px 1ch;
+    min-height: 2em;
   }
 
   .tui-status-hint {
@@ -722,6 +792,53 @@ pl4n-editor {
 
   .tui-panel {
     margin: 8px 2px 2px 2px;
+  }
+
+  /* Touch targets on mobile */
+  .editor-shell .footer {
+    padding: 10px 1ch;
+    gap: 10px;
+  }
+
+  .editor-shell .footer .button {
+    min-height: 36px;
+    padding: 6px 4px;
+    font-size: 13px;
+  }
+
+  .editor-shell .footer .button-row {
+    gap: 8px;
+  }
+
+  .tui-title-bar .font-btn {
+    width: 2em;
+    height: 1.8em;
+    font-size: 14px;
+  }
+}
+
+/* iOS Safari specific - ensure bottom bar is visible above browser chrome */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .tui-status-bar {
+    padding-bottom: calc(17px + env(safe-area-inset-bottom));
+  }
+
+  .tui-page {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Extra padding for mobile Safari - browser chrome is tall */
+@media screen and (max-width: 768px) {
+  .tui-status-bar {
+    padding-bottom: max(25px, calc(17px + env(safe-area-inset-bottom, 25px)));
+  }
+}
+
+/* iOS standalone/PWA detection - even more padding for home bar */
+@media screen and (display-mode: standalone) {
+  .tui-status-bar {
+    padding-bottom: calc(21px + env(safe-area-inset-bottom, 34px));
   }
 }
 

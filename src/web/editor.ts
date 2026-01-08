@@ -686,7 +686,7 @@ Try editing this text to see the diff highlighting in action!`;
             this.showContinueConfirm
               ? this.renderContinueConfirmPanel()
               : html`
-                <div class="status">${this.statusMessage}</div>
+                <div class="status ${this.statusMessage.toLowerCase().includes("failed") ? "error" : ""}">${this.statusMessage}</div>
                 ${
                   this.readOnly
                     ? html``

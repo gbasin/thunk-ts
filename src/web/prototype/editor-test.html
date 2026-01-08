@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
     <title>PL4N v0.1 - Plan Editor</title>
     <link rel="stylesheet" href="/assets/styles.css" />
     <link rel="stylesheet" href="/assets/prototype/tui-styles.css" />
@@ -93,24 +93,34 @@
       document.getElementById('font-up').addEventListener('click', () => updateFontSize(fontSize + 1));
       document.getElementById('font-down').addEventListener('click', () => updateFontSize(fontSize - 1));
 
-      // Observe editor status changes to update info bar
+      // Observe editor status changes to update info bar and modified indicator
       const observer = new MutationObserver(() => {
         const editor = document.querySelector('pl4n-editor');
         if (!editor) return;
 
         const statusEl = editor.querySelector('.status');
+        const panelHeader = document.querySelector('.tui-panel-header');
+
         if (statusEl) {
           const statusText = statusEl.textContent;
           const infoStatus = document.getElementById('info-status');
           infoStatus.className = 'tui-info-value';
 
+          // Check if document is modified (unsaved changes)
+          const isModified = statusText.includes('Unsaved') || statusText.includes('changes');
+
+          // Update modified indicator on panel header
+          if (panelHeader) {
+            panelHeader.classList.toggle('modified', isModified);
+          }
+
           if (statusText.includes('Working') || statusText.includes('Saving')) {
             infoStatus.classList.add('status-working');
-            infoStatus.textContent = 'WORKING';
+            infoStatus.textContent = 'SAVING';
           } else if (statusText.includes('failed') || statusText.includes('error')) {
             infoStatus.classList.add('status-error');
             infoStatus.textContent = 'ERROR';
-          } else if (statusText.includes('Unsaved')) {
+          } else if (isModified) {
             infoStatus.classList.add('status-working');
             infoStatus.textContent = 'MODIFIED';
           } else {
