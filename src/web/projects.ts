@@ -90,7 +90,7 @@ class Pl4nProjects extends LitElement {
       .filter((value): value is string => Boolean(value))
       .sort()
       .slice(-1)[0];
-    const latestLabel = latest ? new Date(latest).toLocaleString() : "--";
+    const latestLabel = formatRelativeTime(latest);
 
     const sessionNameEl = document.getElementById("tui-session-name");
     if (sessionNameEl) {

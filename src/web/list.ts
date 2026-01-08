@@ -129,9 +129,7 @@ class Pl4nList extends LitElement {
     const project = this.project;
     const sessions = this.sessions;
     const projectName = project?.name ?? "--";
-    const latest = sessions[0]?.updated_at
-      ? new Date(sessions[0].updated_at).toLocaleString()
-      : "--";
+    const latest = formatRelativeTime(sessions[0]?.updated_at);
 
     const sessionNameEl = document.getElementById("tui-session-name");
     if (sessionNameEl) {
