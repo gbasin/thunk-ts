@@ -13,8 +13,8 @@
       html { background: #2d2a26; }
       body {
         background: #f5f3ef;
-        /* Fixed top padding for iOS status bar - env() often returns 0 in Safari */
-        padding-top: max(env(safe-area-inset-top, 0px), 44px);
+        /* Small buffer for Safari chrome animation glitch - env() returns 0 in normal browsing */
+        padding-top: max(env(safe-area-inset-top, 0px), 12px);
       }
       @media (min-width: 768px) {
         body { padding-top: 0; }

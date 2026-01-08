@@ -94,10 +94,10 @@ body {
   padding-right: max(2px, env(safe-area-inset-right, 0px));
 }
 
-/* Mobile: account for fixed body padding-top */
+/* Mobile: account for body padding-top buffer */
 @media (max-width: 767px) {
   .tui-page {
-    height: calc(100svh - 44px);
+    height: calc(100svh - 12px);
   }
 }
 
