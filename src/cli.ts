@@ -389,6 +389,7 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
     .command("server [action]")
     .describe("Manage the web editor server")
     .option("--foreground", "Run server in foreground")
+    .option("--restart", "Kill existing server before starting")
     .option("--workspace <path>", "Workspace root to scan for projects")
     .option("--bind <host>", "Bind address for the server")
     .action(async (action: string | undefined, opts: Record<string, unknown>) => {
@@ -406,10 +407,18 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
       });
 
       if (mode === "start") {
+        // Handle --restart flag: stop existing server first
+        if (opts.restart) {
+          const existing = await deps.isDaemonRunning(serverConfig.globalDir);
+          if (existing.running) {
+            await deps.stopDaemon(serverConfig.globalDir);
+          }
+        }
+
         if (opts.foreground) {
           const running = await deps.isDaemonRunning(serverConfig.globalDir);
           if (running.running) {
-            exitWithError({ error: "Server already running" }, pretty);
+            exitWithError({ error: "Server already running (use --restart to replace)" }, pretty);
           }
           const portStart = serverConfig.port ?? 3456;
           const port = await deps.findAvailablePort(portStart);

@@ -52,10 +52,11 @@ PL4N_WEB=0 bun run src/index.ts init "Add user authentication"
 Manual server control:
 
 ```bash
-pl4n server start        # start daemon
-pl4n server stop         # stop daemon
-pl4n server status       # check running status
-pl4n server start --foreground  # run in foreground (dev)
+pl4n server start            # start daemon
+pl4n server stop             # stop daemon
+pl4n server status           # check running status
+pl4n server start --restart  # kill existing server, then start
+pl4n server start --foreground   # run in foreground (dev)
 pl4n server start --workspace /path/to/root  # scan a specific workspace
 pl4n server start --bind 127.0.0.1           # bind address
 ```
