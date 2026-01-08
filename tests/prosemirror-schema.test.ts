@@ -161,3 +161,49 @@ Footer paragraph`;
     expect(serialized1).toBe(serialized2);
   });
 });
+
+describe("Markdown Blocks", () => {
+  test("parses headings and lists", () => {
+    const markdown = `# Title
+
+## Section
+
+- First
+- Second
+
+1. Alpha
+2. Beta`;
+
+    const doc = parseMarkdown(markdown);
+    const nodes: string[] = [];
+    doc.forEach((node) => nodes.push(node.type.name));
+
+    expect(nodes).toContain("heading");
+    expect(nodes).toContain("bullet_list");
+    expect(nodes).toContain("ordered_list");
+  });
+});
+
+describe("Markdown Marks", () => {
+  test("round-trips bold, italic, and strike", () => {
+    const markdown = `This is **bold**, *italic*, and ~~strike~~.`;
+
+    const doc = parseMarkdown(markdown);
+    const serialized = serializeMarkdown(doc);
+
+    expect(serialized).toContain("**bold**");
+    expect(serialized).toContain("*italic*");
+    expect(serialized).toContain("~~strike~~");
+  });
+
+  test("round-trips nested marks consistently", () => {
+    const markdown = `Mix **bold *italic*** and ~~strike **bold**~~.`;
+
+    const doc1 = parseMarkdown(markdown);
+    const serialized1 = serializeMarkdown(doc1);
+    const doc2 = parseMarkdown(serialized1);
+    const serialized2 = serializeMarkdown(doc2);
+
+    expect(serialized1).toBe(serialized2);
+  });
+});

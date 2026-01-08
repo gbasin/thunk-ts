@@ -12,11 +12,13 @@
 import { EditorState, Transaction, Plugin } from "prosemirror-state";
 import { EditorView, Decoration, DecorationSet } from "prosemirror-view";
 import { keymap } from "prosemirror-keymap";
-import { baseKeymap } from "prosemirror-commands";
+import { baseKeymap, toggleMark } from "prosemirror-commands";
 import { history, undo, redo } from "prosemirror-history";
+import { inputRules, textblockTypeInputRule, wrappingInputRule } from "prosemirror-inputrules";
+import { splitListItem, liftListItem, sinkListItem } from "prosemirror-schema-list";
 import { Node } from "prosemirror-model";
 import * as Diff from "diff";
-import { parseMarkdown, serializeMarkdown } from "./prosemirror-schema.js";
+import { parseMarkdown, serializeMarkdown, schema } from "./prosemirror-schema.js";
 
 export interface PlanEditorOptions {
   /** Initial markdown content */
@@ -768,7 +770,24 @@ export class PlanEditor {
       doc,
       plugins: [
         history(),
+        inputRules({
+          rules: [
+            textblockTypeInputRule(/^(#{1,6})\s$/, schema.nodes.heading, (match) => ({
+              level: match[1].length,
+            })),
+            wrappingInputRule(/^(\s*)([-*+])\s$/, schema.nodes.bullet_list),
+            wrappingInputRule(/^(\s*)(\d+)\.\s$/, schema.nodes.ordered_list, (match) => ({
+              order: Number(match[2]),
+            })),
+          ],
+        }),
         keymap({
+          "Mod-b": toggleMark(schema.marks.strong),
+          "Mod-i": toggleMark(schema.marks.em),
+          "Mod-Shift-x": toggleMark(schema.marks.strike),
+          Enter: splitListItem(schema.nodes.list_item),
+          Tab: sinkListItem(schema.nodes.list_item),
+          "Shift-Tab": liftListItem(schema.nodes.list_item),
           "Mod-z": undo,
           "Mod-Shift-z": redo,
           "Mod-y": redo,
