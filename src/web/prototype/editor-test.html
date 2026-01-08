@@ -3,12 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#2d2a26" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>PL4N v0.1 - Plan Editor</title>
     <link rel="stylesheet" href="/assets/styles.css" />
     <link rel="stylesheet" href="/assets/prototype/tui-styles.css" />
     <style>
-      /* Inline critical overrides for immediate visual */
-      html, body { background: #f5f3ef; }
+      /* Dark background at html level for iOS Safari status bar blending */
+      html { background: #2d2a26; }
+      body {
+        background: #f5f3ef;
+        /* Fixed top padding for iOS status bar - env() often returns 0 in Safari */
+        padding-top: max(env(safe-area-inset-top, 0px), 44px);
+      }
+      @media (min-width: 768px) {
+        body { padding-top: 0; }
+      }
     </style>
   </head>
   <body>

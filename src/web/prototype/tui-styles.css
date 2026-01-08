@@ -65,6 +65,8 @@ html,
 body {
   height: 100%;
   overflow: hidden;
+  /* Dark background at root level to blend with title bar when Safari chrome shifts */
+  background: var(--tui-fg);
 }
 
 body {
@@ -82,10 +84,21 @@ body {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .tui-page {
+  /* Use svh for stable height - assumes Safari chrome is visible */
   height: 100vh;
+  height: 100svh;
   display: flex;
   flex-direction: column;
   padding: 2px;
+  padding-left: max(2px, env(safe-area-inset-left, 0px));
+  padding-right: max(2px, env(safe-area-inset-right, 0px));
+}
+
+/* Mobile: account for fixed body padding-top */
+@media (max-width: 767px) {
+  .tui-page {
+    height: calc(100svh - 44px);
+  }
 }
 
 .tui-title-bar {
@@ -96,7 +109,7 @@ body {
   background: var(--tui-fg);
   color: var(--tui-bg);
   font-weight: bold;
-  height: 1.4em;
+  min-height: 1.4em;
   flex-shrink: 0;
 }
 
@@ -563,7 +576,7 @@ pl4n-editor {
   left: 0;
   right: 0;
   top: 100%;
-  height: env(safe-area-inset-bottom, 50px);
+  height: env(safe-area-inset-bottom, 0px);
   background: inherit;
 }
 
@@ -817,28 +830,10 @@ pl4n-editor {
   }
 }
 
-/* iOS Safari specific - ensure bottom bar is visible above browser chrome */
-@supports (padding-bottom: env(safe-area-inset-bottom)) {
+/* iOS Safari - minimal bottom padding, env() handles safe area when needed */
+@media screen and (max-width: 767px) {
   .tui-status-bar {
-    padding-bottom: calc(17px + env(safe-area-inset-bottom));
-  }
-
-  .tui-page {
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-}
-
-/* Extra padding for mobile Safari - browser chrome is tall */
-@media screen and (max-width: 768px) {
-  .tui-status-bar {
-    padding-bottom: max(25px, calc(17px + env(safe-area-inset-bottom, 25px)));
-  }
-}
-
-/* iOS standalone/PWA detection - even more padding for home bar */
-@media screen and (display-mode: standalone) {
-  .tui-status-bar {
-    padding-bottom: calc(21px + env(safe-area-inset-bottom, 34px));
+    padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
   }
 }
 
