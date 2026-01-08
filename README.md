@@ -79,6 +79,21 @@ workspaces:
   - /Users/you/work
 bind: 0.0.0.0
 port: 3456
+auth:
+  mode: strict
+```
+
+For LAN + Tailscale access without tokens, use trusted mode with CIDR allowlist:
+
+```yaml
+auth:
+  mode: trusted
+  trusted_cidrs:
+    - 127.0.0.0/8
+    - 10.0.0.0/8
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+    - 100.64.0.0/10
 ```
 
 You can also set a single workspace via `PL4N_WORKSPACE=/path/to/root`.

@@ -23,6 +23,8 @@ type HandlerContext = {
   globalDir: string;
   registry: ProjectRegistry;
   sse: SseManager;
+  authMode: "strict" | "trusted";
+  isTrustedRequest?: (req: Request) => boolean;
   spawn?: SpawnLike;
   now?: () => Date;
 };
@@ -226,15 +228,43 @@ function sessionNotFound(): Response {
 export function createHandlers(context: HandlerContext) {
   const spawn = context.spawn ?? Bun.spawn;
   const now = context.now ?? (() => new Date());
+  const isTrusted = (req: Request): boolean =>
+    context.authMode === "trusted" && (context.isTrustedRequest?.(req) ?? false);
+
+  const requireGlobalAuth = async (req: Request): Promise<Response | null> => {
+    if (isTrusted(req)) {
+      return null;
+    }
+    const token = parseToken(req);
+    if (!(await validateGlobalToken(token, context.globalDir))) {
+      return jsonResponse(401, { error: "invalid token" });
+    }
+    return null;
+  };
+
+  const requireSessionAuth = async (
+    req: Request,
+    sessionId: string,
+    manager: SessionManager,
+  ): Promise<Response | null> => {
+    if (isTrusted(req)) {
+      return null;
+    }
+    const token = parseToken(req);
+    if (!(await validateSessionToken(sessionId, token, manager))) {
+      return jsonResponse(401, { error: "invalid token" });
+    }
+    return null;
+  };
 
   const requireProject = (projectId: string): ProjectInfo | null =>
     context.registry.getProject(projectId);
 
   return {
     async handleProjectsPage(req: Request): Promise<Response> {
-      const token = parseToken(req);
-      if (!(await validateGlobalToken(token, context.globalDir))) {
-        return jsonResponse(401, { error: "invalid token" });
+      const authError = await requireGlobalAuth(req);
+      if (authError) {
+        return authError;
       }
 
       const template = await resolveTemplate("projects.html");
@@ -263,9 +293,9 @@ export function createHandlers(context: HandlerContext) {
     },
 
     async handleProjects(req: Request): Promise<Response> {
-      const token = parseToken(req);
-      if (!(await validateGlobalToken(token, context.globalDir))) {
-        return jsonResponse(401, { error: "invalid token" });
+      const authError = await requireGlobalAuth(req);
+      if (authError) {
+        return authError;
       }
 
       const projects = context.registry.listProjects();
@@ -285,9 +315,9 @@ export function createHandlers(context: HandlerContext) {
     },
 
     async handleProjectSessionsPage(req: Request, projectId: string): Promise<Response> {
-      const token = parseToken(req);
-      if (!(await validateGlobalToken(token, context.globalDir))) {
-        return jsonResponse(401, { error: "invalid token" });
+      const authError = await requireGlobalAuth(req);
+      if (authError) {
+        return authError;
       }
 
       const project = requireProject(projectId);
@@ -335,9 +365,9 @@ export function createHandlers(context: HandlerContext) {
     },
 
     async handleProjectSessions(req: Request, projectId: string): Promise<Response> {
-      const token = parseToken(req);
-      if (!(await validateGlobalToken(token, context.globalDir))) {
-        return jsonResponse(401, { error: "invalid token" });
+      const authError = await requireGlobalAuth(req);
+      if (authError) {
+        return authError;
       }
 
       const project = requireProject(projectId);
@@ -362,10 +392,11 @@ export function createHandlers(context: HandlerContext) {
       if (!project) {
         return projectNotFound(projectId);
       }
-      const token = parseToken(req);
-      if (!(await validateSessionToken(sessionId, token, project.manager))) {
-        return jsonResponse(401, { error: "invalid token" });
+      const authError = await requireSessionAuth(req, sessionId, project.manager);
+      if (authError) {
+        return authError;
       }
+      const token = parseToken(req);
 
       const session = await project.manager.loadSession(sessionId);
       if (!session) {
@@ -400,9 +431,9 @@ export function createHandlers(context: HandlerContext) {
       if (!project) {
         return projectNotFound(projectId);
       }
-      const token = parseToken(req);
-      if (!(await validateSessionToken(sessionId, token, project.manager))) {
-        return jsonResponse(401, { error: "invalid token" });
+      const authError = await requireSessionAuth(req, sessionId, project.manager);
+      if (authError) {
+        return authError;
       }
 
       const session = await project.manager.loadSession(sessionId);
@@ -452,9 +483,9 @@ export function createHandlers(context: HandlerContext) {
       if (!project) {
         return projectNotFound(projectId);
       }
-      const token = parseToken(req);
-      if (!(await validateSessionToken(sessionId, token, project.manager))) {
-        return jsonResponse(401, { error: "invalid token" });
+      const authError = await requireSessionAuth(req, sessionId, project.manager);
+      if (authError) {
+        return authError;
       }
 
       const session = await project.manager.loadSession(sessionId);
@@ -488,9 +519,9 @@ export function createHandlers(context: HandlerContext) {
       if (!project) {
         return projectNotFound(projectId);
       }
-      const token = parseToken(req);
-      if (!(await validateSessionToken(sessionId, token, project.manager))) {
-        return jsonResponse(401, { error: "invalid token" });
+      const authError = await requireSessionAuth(req, sessionId, project.manager);
+      if (authError) {
+        return authError;
       }
 
       const session = await project.manager.loadSession(sessionId);
@@ -528,9 +559,9 @@ export function createHandlers(context: HandlerContext) {
       if (!project) {
         return projectNotFound(projectId);
       }
-      const token = parseToken(req);
-      if (!(await validateSessionToken(sessionId, token, project.manager))) {
-        return jsonResponse(401, { error: "invalid token" });
+      const authError = await requireSessionAuth(req, sessionId, project.manager);
+      if (authError) {
+        return authError;
       }
 
       const session = await project.manager.loadSession(sessionId);
@@ -565,9 +596,9 @@ export function createHandlers(context: HandlerContext) {
       if (!project) {
         return projectNotFound(projectId);
       }
-      const token = parseToken(req);
-      if (!(await validateSessionToken(sessionId, token, project.manager))) {
-        return jsonResponse(401, { error: "invalid token" });
+      const authError = await requireSessionAuth(req, sessionId, project.manager);
+      if (authError) {
+        return authError;
       }
 
       const session = await project.manager.loadSession(sessionId);
@@ -610,9 +641,9 @@ export function createHandlers(context: HandlerContext) {
       if (!project) {
         return projectNotFound(projectId);
       }
-      const token = parseToken(req);
-      if (!(await validateSessionToken(sessionId, token, project.manager))) {
-        return jsonResponse(401, { error: "invalid token" });
+      const authError = await requireSessionAuth(req, sessionId, project.manager);
+      if (authError) {
+        return authError;
       }
 
       const session = await project.manager.loadSession(sessionId);
@@ -624,18 +655,20 @@ export function createHandlers(context: HandlerContext) {
     },
 
     async handleActivity(req: Request): Promise<Response> {
-      const token = parseToken(req);
-      if (!(await validateGlobalToken(token, context.globalDir))) {
-        return jsonResponse(401, { error: "invalid token" });
+      const authError = await requireGlobalAuth(req);
+      if (authError) {
+        return authError;
       }
+      await updateServerActivity(context.globalDir, now());
       return jsonResponse(200, { events: context.registry.getActivity() });
     },
 
     async handleEvents(req: Request): Promise<Response> {
-      const token = parseToken(req);
-      if (!(await validateGlobalToken(token, context.globalDir))) {
-        return jsonResponse(401, { error: "invalid token" });
+      const authError = await requireGlobalAuth(req);
+      if (authError) {
+        return authError;
       }
+      await updateServerActivity(context.globalDir, now());
       return context.sse.handleEvents(context.registry.getActivity());
     },
 

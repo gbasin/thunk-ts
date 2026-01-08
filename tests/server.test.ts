@@ -77,6 +77,7 @@ async function createHandlersForProject(
     globalDir,
     registry,
     sse,
+    authMode: "strict",
     spawn: options.spawn as undefined | ((options: { cmd: string[] }) => { pid: number }),
   });
   return { manager, projectId, globalDir, registry, handlers, sse };

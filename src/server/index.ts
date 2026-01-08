@@ -6,12 +6,15 @@ import { findAvailablePort } from "./network";
 import { ProjectRegistry } from "./projects";
 import { createSseManager } from "./sse";
 import { resolveServerConfig } from "./config";
+import { isTrustedIp } from "./trust";
 
 type ServerStart = {
   workspaces: string[];
   port: number;
   bind: string;
   globalDir: string;
+  authMode: "strict" | "trusted";
+  trustedCidrs: string[];
 };
 
 export function parsePortArg(argv: string[]): number | null {
@@ -52,15 +55,31 @@ export async function startServer(opts?: Partial<ServerStart>): Promise<void> {
   const workspaces = opts?.workspaces ?? resolved.workspaces;
   const bind = opts?.bind ?? resolved.bind;
   const port = opts?.port ?? (await findAvailablePort(resolved.port ?? 3456));
+  const authMode = opts?.authMode ?? resolved.authMode;
+  const trustedCidrs = opts?.trustedCidrs ?? resolved.trustedCidrs;
 
   await ensureServerInfo(globalDir, port, bind);
 
   const registry = new ProjectRegistry({ workspaces });
   await registry.start();
   const sse = createSseManager(registry);
-  const handlers = createHandlers({ globalDir, registry, sse });
+  let server: ReturnType<typeof Bun.serve> | null = null;
+  const isTrustedRequest = (req: Request): boolean => {
+    if (authMode !== "trusted") {
+      return false;
+    }
+    if (!server) {
+      return false;
+    }
+    if (typeof server.requestIP !== "function") {
+      return false;
+    }
+    const client = server.requestIP(req);
+    return isTrustedIp(client?.address ?? null, trustedCidrs);
+  };
+  const handlers = createHandlers({ globalDir, registry, sse, authMode, isTrustedRequest });
 
-  const server = Bun.serve({
+  server = Bun.serve({
     port,
     hostname: bind,
     fetch: async (req) => {
@@ -178,6 +197,8 @@ async function main(): Promise<void> {
     bind: resolved.bind,
     globalDir: resolved.globalDir,
     port,
+    authMode: resolved.authMode,
+    trustedCidrs: resolved.trustedCidrs,
   });
 }
 

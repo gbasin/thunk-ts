@@ -7,7 +7,11 @@ type ServerConfigFile = {
   workspaces?: string[];
   bind?: string;
   port?: number;
+  authMode?: ServerAuthMode;
+  trustedCidrs?: string[];
 };
+
+export type ServerAuthMode = "strict" | "trusted";
 
 export type ServerConfig = {
   workspaces: string[];
@@ -15,6 +19,8 @@ export type ServerConfig = {
   port?: number;
   globalDir: string;
   workspaceSource: "cli" | "env" | "config" | "default";
+  authMode: ServerAuthMode;
+  trustedCidrs: string[];
 };
 
 export type ServerConfigOverrides = {
@@ -26,6 +32,14 @@ export type ServerConfigOverrides = {
 };
 
 const DEFAULT_BIND = "0.0.0.0";
+const DEFAULT_AUTH_MODE: ServerAuthMode = "strict";
+const DEFAULT_TRUSTED_CIDRS = [
+  "127.0.0.0/8",
+  "10.0.0.0/8",
+  "172.16.0.0/12",
+  "192.168.0.0/16",
+  "100.64.0.0/10",
+];
 
 function requireString(value: unknown, field: string): string {
   if (typeof value !== "string" || value.trim().length === 0) {
@@ -60,6 +74,16 @@ function parsePort(value: unknown): number | undefined {
   throw new Error("port must be a number");
 }
 
+function parseAuthMode(value: unknown): ServerAuthMode {
+  if (typeof value !== "string") {
+    throw new Error("auth.mode must be a string");
+  }
+  if (value === "strict" || value === "trusted") {
+    return value;
+  }
+  throw new Error("auth.mode must be strict or trusted");
+}
+
 export function resolveGlobalDir(): string {
   const override = process.env.PL4N_HOME?.trim();
   if (override) {
@@ -82,7 +106,16 @@ export async function loadServerConfigFile(globalDir: string): Promise<ServerCon
       : undefined;
     const bind = record.bind ? requireString(record.bind, "bind") : undefined;
     const port = parsePort(record.port);
-    return { workspaces, bind, port };
+    let authMode: ServerAuthMode | undefined;
+    let trustedCidrs: string[] | undefined;
+    if (record.auth && typeof record.auth === "object") {
+      const auth = record.auth as Record<string, unknown>;
+      authMode = auth.mode ? parseAuthMode(auth.mode) : undefined;
+      trustedCidrs = auth.trusted_cidrs
+        ? parseStringList(auth.trusted_cidrs, "auth.trusted_cidrs")
+        : undefined;
+    }
+    return { workspaces, bind, port, authMode, trustedCidrs };
   } catch {
     return {};
   }
@@ -138,11 +171,16 @@ export async function resolveServerConfig(
   const port =
     overrides.port ?? (envPort && !Number.isNaN(envPort) ? envPort : undefined) ?? fileConfig.port;
 
+  const authMode = fileConfig.authMode ?? DEFAULT_AUTH_MODE;
+  const trustedCidrs = fileConfig.trustedCidrs ?? DEFAULT_TRUSTED_CIDRS;
+
   return {
     workspaces: normalizeWorkspaces(workspaces),
     bind,
     port,
     globalDir,
     workspaceSource,
+    authMode,
+    trustedCidrs,
   };
 }
