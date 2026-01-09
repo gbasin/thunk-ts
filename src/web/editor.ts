@@ -1,4 +1,4 @@
-import { LitElement, html } from "lit";
+import { LitElement, html, svg } from "lit";
 import * as Diff from "diff";
 import { PlanEditor } from "./plan-editor.js";
 import { buildLineDiff, type LineChange } from "./diff-render.js";
@@ -67,6 +67,8 @@ class Pl4nEditor extends LitElement {
   private activity: ActivityEvent[] = [];
   private eventSource: EventSource | null = null;
   private agents: AgentStatusMap = {};
+  private archived = false;
+  private archiving = false;
 
   createRenderRoot() {
     return this;
@@ -265,6 +267,7 @@ class Pl4nEditor extends LitElement {
         mtime: number;
         turn: number;
         phase: string;
+        archived: boolean;
         readOnly: boolean;
         hasAutosave: boolean;
         autosave: string | null;
@@ -275,12 +278,14 @@ class Pl4nEditor extends LitElement {
       this.turn = data.turn;
       this.phase = data.phase;
       this.readOnly = data.readOnly;
+      this.archived = data.archived;
       this.showAutosaveBanner = data.hasAutosave;
       this.autosaveContent = data.autosave;
       this.snapshotContent = data.snapshot;
       this.lastLoadedContent = data.content;
       this.agents = data.agents ?? {};
       this.updateAgentStatusDisplay();
+      this.updateArchivedIndicator();
 
       if (this.editor) {
         this.editor.setBaseline(data.content);
@@ -526,6 +531,39 @@ Try editing this text to see the diff highlighting in action!`;
       this.requestUpdate();
     } catch {
       this.statusMessage = "Approve failed";
+      this.requestUpdate();
+    }
+  }
+
+  private async toggleArchive() {
+    if (this.archiving) {
+      return;
+    }
+    this.archiving = true;
+    this.statusMessage = this.archived ? "Unarchiving..." : "Archiving...";
+    this.requestUpdate();
+    try {
+      const url = new URL(
+        `/api/projects/${this.projectId}/archive/${this.session}`,
+        window.location.origin,
+      );
+      if (this.globalToken) {
+        url.searchParams.set("t", this.globalToken);
+      }
+      const response = await fetch(url.toString(), { method: "POST" });
+      if (!response.ok) {
+        this.statusMessage = `Archive failed (${response.status})`;
+        this.requestUpdate();
+        return;
+      }
+      const payload = (await response.json()) as { archived?: boolean };
+      this.archived = Boolean(payload.archived);
+      this.updateArchivedIndicator();
+      this.statusMessage = this.archived ? "Archived" : "Unarchived";
+    } catch {
+      this.statusMessage = "Archive failed";
+    } finally {
+      this.archiving = false;
       this.requestUpdate();
     }
   }
@@ -818,6 +856,8 @@ Try editing this text to see the diff highlighting in action!`;
           </div>
           <div class="header-actions">
             ${this.renderUndoRedoButtons()}
+            ${this.renderArchiveToggle()}
+            ${this.archived ? html`<span class="badge archived">Archived</span>` : html``}
             ${approved ? html`<span class="badge approved">Approved</span>` : html``}
           </div>
         </div>
@@ -884,11 +924,56 @@ Try editing this text to see the diff highlighting in action!`;
     if (this.readOnly) return null;
     return html`
       <div class="undo-redo-float">
-        <button class="undo-redo-btn" @click=${() => this.undo()} title="Undo (Cmd+Z)">↶</button>
-        <button class="undo-redo-btn" @click=${() => this.redo()} title="Redo (Cmd+Shift+Z)">
-          ↷
+        <button
+          class="undo-redo-btn"
+          @click=${() => this.undo()}
+          title="Undo (Cmd+Z)"
+          aria-label="Undo"
+        >
+          ${this.renderUndoIcon()}
+        </button>
+        <button
+          class="undo-redo-btn"
+          @click=${() => this.redo()}
+          title="Redo (Cmd+Shift+Z)"
+          aria-label="Redo"
+        >
+          ${this.renderRedoIcon()}
         </button>
       </div>
+    `;
+  }
+
+  private updateArchivedIndicator() {
+    const archivedEl = document.getElementById("info-archived");
+    if (!archivedEl) {
+      return;
+    }
+    archivedEl.textContent = this.archived ? "YES" : "NO";
+    archivedEl.classList.toggle("status-archived", this.archived);
+  }
+
+  private renderArchiveToggle() {
+    return html`
+      <button class="button secondary" ?disabled=${this.archiving} @click=${() => this.toggleArchive()}>
+        ${this.archiving ? "..." : this.archived ? "Unarchive" : "Archive"}
+      </button>
+    `;
+  }
+
+  private renderUndoIcon() {
+    return svg`
+      <svg class="undo-redo-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+        <path d="M9 5L5 9m0 0l4 4M5 9h7a4 4 0 0 1 0 8h-1" />
+      </svg>
+    `;
+  }
+
+  private renderRedoIcon() {
+    return svg`
+      <svg class="undo-redo-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+        <path d="M11 5l4 4m0 0l-4 4m4-4H8a4 4 0 0 0 0 8h1" />
+      </svg>
     `;
   }
 

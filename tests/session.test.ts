@@ -100,6 +100,31 @@ describe("SessionManager", () => {
     });
   });
 
+  it("filters archived sessions without changing timestamps", async () => {
+    await withTempDir(async (root) => {
+      const manager = new SessionManager(path.join(root, ".pl4n-test"));
+      const active = await manager.createSession("Active task");
+      const archived = await manager.createSession("Archived task");
+
+      const beforeUpdate = archived.updatedAt.toISOString();
+      await manager.setArchived(archived.sessionId, true);
+      const afterArchive = await manager.loadSession(archived.sessionId);
+      expect(afterArchive?.archived).toBe(true);
+      expect(afterArchive?.updatedAt.toISOString()).toBe(beforeUpdate);
+
+      const activeOnly = await manager.listSessions();
+      expect(activeOnly.map((session) => session.sessionId)).toContain(active.sessionId);
+      expect(activeOnly.map((session) => session.sessionId)).not.toContain(archived.sessionId);
+
+      const archivedOnly = await manager.listSessions({ archived: "only" });
+      expect(archivedOnly.map((session) => session.sessionId)).toEqual([archived.sessionId]);
+
+      const all = await manager.listSessions({ archived: "all" });
+      expect(all.map((session) => session.sessionId)).toContain(active.sessionId);
+      expect(all.map((session) => session.sessionId)).toContain(archived.sessionId);
+    });
+  });
+
   it("saves state changes", async () => {
     await withTempDir(async (root) => {
       const manager = new SessionManager(path.join(root, ".pl4n-test"));

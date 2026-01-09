@@ -32,6 +32,7 @@ export class SessionManager {
       phase: Phase.Initializing,
       createdAt: now,
       updatedAt: now,
+      archived: false,
       sessionToken: generateToken(),
     });
 
@@ -102,6 +103,7 @@ export class SessionManager {
       turn: number;
       phase: string;
       updated_at: string;
+      archived?: boolean;
       session_token?: string;
       agents?: Record<string, string>;
       agent_plan_ids?: Record<string, string>;
@@ -129,6 +131,7 @@ export class SessionManager {
       phase: stateData.phase as Phase,
       createdAt: new Date(meta.created_at),
       updatedAt: new Date(stateData.updated_at),
+      archived: stateData.archived ?? false,
       agents: Object.fromEntries(
         Object.entries(stateData.agents ?? {}).map(([key, value]) => [key, value as AgentStatus]),
       ),
@@ -148,6 +151,7 @@ export class SessionManager {
       turn: state.turn,
       phase: state.phase,
       updated_at: state.updatedAt.toISOString(),
+      archived: state.archived,
       agents: Object.fromEntries(Object.entries(state.agents).map(([key, value]) => [key, value])),
       agent_plan_ids: state.agentPlanIds,
     };
@@ -161,7 +165,7 @@ export class SessionManager {
     await fs.writeFile(paths.state, dump(stateData), "utf8");
   }
 
-  async listSessions(): Promise<SessionState[]> {
+  async listSessions(options?: { archived?: "exclude" | "only" | "all" }): Promise<SessionState[]> {
     try {
       await fs.access(this.sessionsDir);
     } catch {
@@ -185,7 +189,14 @@ export class SessionManager {
       }
     }
 
-    return sessions.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+    const archived = options?.archived ?? "exclude";
+    const filtered =
+      archived === "all"
+        ? sessions
+        : sessions.filter((session) =>
+            archived === "only" ? session.archived : !session.archived,
+          );
+    return filtered.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
   }
 
   getPaths(sessionId: string): SessionPaths {
@@ -216,6 +227,19 @@ export class SessionManager {
 
     await fs.rm(paths.root, { recursive: true, force: true });
     return true;
+  }
+
+  async setArchived(sessionId: string, archived: boolean): Promise<SessionState | null> {
+    const state = await this.loadSession(sessionId);
+    if (!state) {
+      return null;
+    }
+    if (state.archived === archived) {
+      return state;
+    }
+    state.archived = archived;
+    await this.saveState(state, false);
+    return state;
   }
 
   async getCurrentTurnFile(sessionId: string): Promise<string | null> {

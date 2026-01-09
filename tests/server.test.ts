@@ -509,6 +509,7 @@ describe("handlers", () => {
     await withTempDir(async (root) => {
       let review!: Awaited<ReturnType<SessionManager["createSession"]>>;
       let approved: Awaited<ReturnType<SessionManager["createSession"]>>;
+      let archived: Awaited<ReturnType<SessionManager["createSession"]>>;
       const { handlers, projectId, globalDir, registry, sse } = await createHandlersForProject(
         root,
         {
@@ -519,6 +520,8 @@ describe("handlers", () => {
             approved = await manager.createSession("Approved task");
             approved.phase = Phase.Approved;
             await manager.saveState(approved);
+            archived = await manager.createSession("Archived task");
+            await manager.setArchived(archived.sessionId, true);
           },
         },
       );
@@ -539,11 +542,67 @@ describe("handlers", () => {
       const approvedItem = payload.sessions.find(
         (item) => item.session_id === approved.sessionId,
       ) as Record<string, unknown> | undefined;
+      const archivedItem = payload.sessions.find(
+        (item) => item.session_id === archived.sessionId,
+      ) as Record<string, unknown> | undefined;
 
       expect(reviewItem?.edit_path).toBe(
         `/projects/${projectId}/edit/${review.sessionId}?t=${review.sessionToken ?? ""}`,
       );
       expect(approvedItem?.edit_path).toBeNull();
+      expect(archivedItem).toBeUndefined();
+
+      await registry.stop();
+      sse.close();
+    });
+  });
+
+  it("filters archived sessions and supports archive toggle", async () => {
+    await withTempDir(async (root) => {
+      let state!: Awaited<ReturnType<SessionManager["createSession"]>>;
+      const { handlers, projectId, globalDir, manager, registry, sse } =
+        await createHandlersForProject(root, {
+          setup: async (projectManager) => {
+            state = await projectManager.createSession("Plan task");
+          },
+        });
+
+      const token = await ensureGlobalToken(globalDir);
+      const archiveRes = await handlers.handleArchive(
+        new Request(
+          `http://localhost/api/projects/${projectId}/archive/${state.sessionId}?t=${token}`,
+          {
+            method: "POST",
+          },
+        ),
+        projectId,
+        state.sessionId,
+      );
+      expect(archiveRes.status).toBe(200);
+      const archivePayload = await readJson(archiveRes);
+      expect(archivePayload.archived).toBe(true);
+
+      const archivedListRes = await handlers.handleProjectSessions(
+        new Request(`http://localhost/api/projects/${projectId}/sessions?archived=1&t=${token}`),
+        projectId,
+      );
+      expect(archivedListRes.status).toBe(200);
+      const archivedPayload = await readJson(archivedListRes);
+      const archivedSessions = archivedPayload.sessions as Record<string, unknown>[];
+      expect(archivedSessions.length).toBe(1);
+      expect(archivedSessions[0]?.archived).toBe(true);
+
+      const allListRes = await handlers.handleProjectSessions(
+        new Request(`http://localhost/api/projects/${projectId}/sessions?archived=all&t=${token}`),
+        projectId,
+      );
+      expect(allListRes.status).toBe(200);
+      const allPayload = await readJson(allListRes);
+      const allSessions = allPayload.sessions as Record<string, unknown>[];
+      expect(allSessions.length).toBe(1);
+
+      const updated = await manager.loadSession(state.sessionId);
+      expect(updated?.archived).toBe(true);
 
       await registry.stop();
       sse.close();

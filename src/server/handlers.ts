@@ -38,6 +38,8 @@ type AutosavePayload = {
   content: string;
 };
 
+type ArchivedFilter = "exclude" | "only" | "all";
+
 function jsonResponse(status: number, data: Record<string, unknown>): Response {
   return new Response(JSON.stringify(data), {
     status,
@@ -69,6 +71,27 @@ function autosaveFilePath(turnFile: string): string {
 function parseToken(req: Request): string | null {
   const url = new URL(req.url);
   return url.searchParams.get("t");
+}
+
+function parseArchivedFilter(req: Request): ArchivedFilter {
+  const url = new URL(req.url);
+  const value = url.searchParams.get("archived");
+  if (!value) {
+    return "exclude";
+  }
+  const normalized = value.toLowerCase();
+  if (normalized === "all") {
+    return "all";
+  }
+  if (
+    normalized === "1" ||
+    normalized === "true" ||
+    normalized === "only" ||
+    normalized === "archived"
+  ) {
+    return "only";
+  }
+  return "exclude";
 }
 
 async function resolveTemplate(fileName: string): Promise<string | null> {
@@ -325,7 +348,7 @@ export function createHandlers(context: HandlerContext) {
         return projectNotFound(projectId);
       }
 
-      const sessions = await project.manager.listSessions();
+      const sessions = await project.manager.listSessions({ archived: parseArchivedFilter(req) });
       const items = [] as Record<string, unknown>[];
       for (const session of sessions) {
         const canEdit = session.phase === Phase.UserReview;
@@ -337,6 +360,7 @@ export function createHandlers(context: HandlerContext) {
           task: session.task,
           turn: session.turn,
           phase: session.phase,
+          archived: session.archived,
           updated_at: session.updatedAt.toISOString(),
           edit_path:
             canEdit && sessionToken
@@ -375,16 +399,27 @@ export function createHandlers(context: HandlerContext) {
         return projectNotFound(projectId);
       }
 
-      const sessions = await project.manager.listSessions();
-      return jsonResponse(200, {
-        sessions: sessions.map((session) => ({
+      const sessions = await project.manager.listSessions({ archived: parseArchivedFilter(req) });
+      const payload = [];
+      for (const session of sessions) {
+        const canEdit = session.phase === Phase.UserReview;
+        const sessionToken = canEdit
+          ? await project.manager.ensureSessionToken(session.sessionId)
+          : null;
+        payload.push({
           session_id: session.sessionId,
           task: session.task,
           turn: session.turn,
           phase: session.phase,
+          archived: session.archived,
           updated_at: session.updatedAt.toISOString(),
-        })),
-      });
+          edit_path:
+            canEdit && sessionToken
+              ? `/projects/${projectId}/edit/${session.sessionId}?t=${sessionToken}`
+              : null,
+        });
+      }
+      return jsonResponse(200, { sessions: payload });
     },
 
     async handleEdit(req: Request, projectId: string, sessionId: string): Promise<Response> {
@@ -471,12 +506,38 @@ export function createHandlers(context: HandlerContext) {
         mtime: loaded.mtime,
         turn: session.turn,
         phase: session.phase,
+        archived: session.archived,
         readOnly: session.phase !== Phase.UserReview,
         hasAutosave,
         autosave: autosaveContent,
         snapshot: snapshotContent,
         agents: session.agents,
       });
+    },
+
+    async handleArchive(req: Request, projectId: string, sessionId: string): Promise<Response> {
+      const authError = await requireGlobalAuth(req);
+      if (authError) {
+        return authError;
+      }
+
+      const project = requireProject(projectId);
+      if (!project) {
+        return projectNotFound(projectId);
+      }
+
+      const session = await project.manager.loadSession(sessionId);
+      if (!session) {
+        return sessionNotFound();
+      }
+
+      const nextArchived = !session.archived;
+      const updated = await project.manager.setArchived(sessionId, nextArchived);
+      if (!updated) {
+        return sessionNotFound();
+      }
+
+      return jsonResponse(200, { session_id: sessionId, archived: nextArchived });
     },
 
     async handleSave(req: Request, projectId: string, sessionId: string): Promise<Response> {

@@ -141,6 +141,38 @@ describe("CLI", () => {
     });
   });
 
+  it("archive and unarchive hide sessions by default", async () => {
+    await withTempDir(async (root) => {
+      const repoRoot = path.resolve(import.meta.dir, "..");
+      const pl4nDir = path.join(root, ".pl4n-test");
+
+      const init = runCli(["--pl4n-dir", pl4nDir, "init", "Feature 1"], repoRoot);
+      const sessionId = JSON.parse(init.stdout).session_id as string;
+
+      const archiveRes = runCli(
+        ["--pl4n-dir", pl4nDir, "archive", "--session", sessionId],
+        repoRoot,
+      );
+      const archiveData = JSON.parse(archiveRes.stdout);
+      expect(archiveData.archived).toBe(true);
+
+      const listActive = runCli(["--pl4n-dir", pl4nDir, "list"], repoRoot);
+      const activeData = JSON.parse(listActive.stdout);
+      expect(activeData.sessions.length).toBe(0);
+
+      const listArchived = runCli(["--pl4n-dir", pl4nDir, "list", "--archived"], repoRoot);
+      const archivedData = JSON.parse(listArchived.stdout);
+      expect(archivedData.sessions.length).toBe(1);
+
+      const unarchiveRes = runCli(
+        ["--pl4n-dir", pl4nDir, "unarchive", "--session", sessionId],
+        repoRoot,
+      );
+      const unarchiveData = JSON.parse(unarchiveRes.stdout);
+      expect(unarchiveData.archived).toBe(false);
+    });
+  });
+
   it("status returns session data", async () => {
     await withTempDir(async (root) => {
       const repoRoot = path.resolve(import.meta.dir, "..");

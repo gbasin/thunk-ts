@@ -36,6 +36,7 @@ type ProjectRegistryOptions = {
 
 type SessionStateSummary = {
   phase?: string;
+  archived?: boolean;
 };
 
 const DEFAULT_IGNORES = [".git", "node_modules", "dist", "build", "coverage", "vendor"];
@@ -66,7 +67,8 @@ async function readStatePhase(filePath: string): Promise<SessionStateSummary | n
       return null;
     }
     const phase = typeof parsed.phase === "string" ? parsed.phase : undefined;
-    return { phase };
+    const archived = typeof parsed.archived === "boolean" ? parsed.archived : undefined;
+    return { phase, archived };
   } catch {
     return null;
   }
@@ -266,6 +268,11 @@ export class ProjectRegistry extends EventEmitter {
     const sessionId = path.basename(path.dirname(filePath));
     const summary = await readStatePhase(filePath);
     if (!summary?.phase) {
+      return;
+    }
+    if (summary.archived) {
+      const key = `${project.id}:${sessionId}`;
+      this.sessionPhases.delete(key);
       return;
     }
     const key = `${project.id}:${sessionId}`;

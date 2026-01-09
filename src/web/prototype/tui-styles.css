@@ -308,6 +308,15 @@ pl4n-editor {
 }
 
 .editor-shell .header {
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  height: 0;
+  overflow: visible;
+}
+
+.editor-shell .header-title {
   display: none;
 }
 
@@ -1066,12 +1075,13 @@ pl4n-editor {
 .undo-redo-btn {
   width: auto;
   height: auto;
-  padding: 2px 8px;
+  padding: 3px 10px;
   background: var(--tui-bg);
   border: 1px solid var(--tui-border);
   border-radius: 0;
   color: var(--tui-fg);
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 600;
   box-shadow: none;
 }
 
@@ -1277,14 +1287,21 @@ pl4n-editor {
 .undo-redo-btn {
   width: auto;
   height: auto;
-  padding: 0.25em 1ch;
+  padding: 0.32em 1.5ch;
   background: var(--tui-bg);
   border: 1px solid var(--tui-border);
   border-radius: 0;
   color: var(--tui-fg);
   font-family: var(--tui-font);
-  font-size: var(--tui-font-size);
+  font-size: calc(var(--tui-font-size) + 4px);
+  font-weight: 600;
   cursor: pointer;
+}
+
+.undo-redo-icon {
+  width: 1.15em;
+  height: 1.15em;
+  stroke-width: 2px;
 }
 
 .undo-redo-btn:hover {

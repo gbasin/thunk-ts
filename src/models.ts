@@ -403,6 +403,7 @@ export class SessionState {
   phase: Phase;
   createdAt: Date;
   updatedAt: Date;
+  archived: boolean;
   agents: AgentStatusMap;
   agentPlanIds: AgentPlanIdMap;
   agentErrors: AgentErrorMap;
@@ -415,6 +416,7 @@ export class SessionState {
     phase: Phase;
     createdAt: Date;
     updatedAt: Date;
+    archived?: boolean;
     agents?: AgentStatusMap;
     agentPlanIds?: AgentPlanIdMap;
     agentErrors?: AgentErrorMap;
@@ -426,6 +428,7 @@ export class SessionState {
     this.phase = params.phase;
     this.createdAt = params.createdAt;
     this.updatedAt = params.updatedAt;
+    this.archived = params.archived ?? false;
     this.agents = params.agents ?? {};
     this.agentPlanIds = params.agentPlanIds ?? {};
     this.agentErrors = params.agentErrors ?? {};
@@ -440,6 +443,7 @@ export class SessionState {
       phase: this.phase,
       created_at: this.createdAt.toISOString(),
       updated_at: this.updatedAt.toISOString(),
+      archived: this.archived,
       agents: Object.fromEntries(Object.entries(this.agents).map(([key, value]) => [key, value])),
       agent_plan_ids: this.agentPlanIds,
     };

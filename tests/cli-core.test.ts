@@ -245,7 +245,8 @@ describe("CLI (runCliCommand)", () => {
       const pl4nDir = path.join(root, ".pl4n-test");
       const manager = new SessionManager(pl4nDir);
       await manager.createSession("Task one");
-      await manager.createSession("Task two");
+      const archived = await manager.createSession("Task two");
+      await manager.setArchived(archived.sessionId, true);
 
       const logs = await runCliCommandCapture([
         "node",
@@ -257,7 +258,27 @@ describe("CLI (runCliCommand)", () => {
 
       expect(logs[0]).toContain("\n");
       const data = JSON.parse(logs[0]) as { sessions: unknown[] };
-      expect(data.sessions.length).toBe(2);
+      expect(data.sessions.length).toBe(1);
+
+      const archivedLogs = await runCliCommandCapture([
+        "node",
+        "pl4n",
+        `--pl4n-dir=${pl4nDir}`,
+        "list",
+        "--archived",
+      ]);
+      const archivedData = JSON.parse(archivedLogs[0]) as { sessions: unknown[] };
+      expect(archivedData.sessions.length).toBe(1);
+
+      const allLogs = await runCliCommandCapture([
+        "node",
+        "pl4n",
+        `--pl4n-dir=${pl4nDir}`,
+        "list",
+        "--all",
+      ]);
+      const allData = JSON.parse(allLogs[0]) as { sessions: unknown[] };
+      expect(allData.sessions.length).toBe(2);
     });
   });
 
@@ -699,6 +720,42 @@ describe("CLI (runCliCommand)", () => {
         "--pl4n-dir",
         pl4nDir,
         "clean",
+      ]);
+
+      expect(result.exitCode).toBe(1);
+      const data = JSON.parse(result.output) as { error: string };
+      expect(data.error).toContain("Missing --session");
+    });
+  });
+
+  it("archive errors when --session is missing", async () => {
+    await withTempDir(async (root) => {
+      const pl4nDir = path.join(root, ".pl4n-test");
+
+      const result = await runCliCommandExpectExit([
+        "node",
+        "pl4n",
+        "--pl4n-dir",
+        pl4nDir,
+        "archive",
+      ]);
+
+      expect(result.exitCode).toBe(1);
+      const data = JSON.parse(result.output) as { error: string };
+      expect(data.error).toContain("Missing --session");
+    });
+  });
+
+  it("unarchive errors when --session is missing", async () => {
+    await withTempDir(async (root) => {
+      const pl4nDir = path.join(root, ".pl4n-test");
+
+      const result = await runCliCommandExpectExit([
+        "node",
+        "pl4n",
+        "--pl4n-dir",
+        pl4nDir,
+        "unarchive",
       ]);
 
       expect(result.exitCode).toBe(1);

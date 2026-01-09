@@ -124,6 +124,29 @@ body {
   color: var(--tui-fg-dim);
 }
 
+.tui-filter {
+  display: inline-flex;
+  gap: 0.6ch;
+}
+
+.tui-filter-btn {
+  padding: 0 0.6ch;
+  border: 1px solid var(--tui-border);
+  background: var(--tui-bg);
+  color: var(--tui-fg);
+  font-size: 0.85em;
+  cursor: pointer;
+}
+
+.tui-filter-btn.active {
+  border-color: var(--tui-accent);
+  color: var(--tui-accent);
+}
+
+.tui-filter-btn:hover {
+  background: var(--tui-highlight);
+}
+
 /* Card-based layout for projects */
 .tui-cards {
   display: flex;
@@ -163,6 +186,12 @@ body {
   gap: 1ch;
 }
 
+.tui-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5ch;
+}
+
 .tui-card-title {
   font-weight: bold;
   color: var(--tui-fg-bright);
@@ -179,6 +208,29 @@ body {
   border: 1px solid var(--tui-border);
   text-align: center;
   font-size: 0.9em;
+}
+
+.tui-card-badge.archived {
+  border-color: var(--tui-warning);
+  color: var(--tui-warning);
+}
+
+.tui-card-action {
+  padding: 0 0.6ch;
+  border: 1px solid var(--tui-border);
+  background: var(--tui-bg);
+  color: var(--tui-fg);
+  font-size: 0.85em;
+  cursor: pointer;
+}
+
+.tui-card-action:hover {
+  background: var(--tui-highlight);
+}
+
+.tui-card-action:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .tui-card-meta {
@@ -214,6 +266,10 @@ body {
 
 .tui-card.disabled:hover {
   background: var(--tui-bg);
+}
+
+.tui-card.archived {
+  opacity: 0.75;
 }
 
 .tui-card-badge.approved {
@@ -358,6 +414,15 @@ pl4n-list {
 .badge.approved {
   border-color: var(--accent-2);
   color: var(--accent-2);
+}
+
+.badge.archived {
+  border-color: var(--tui-warning);
+  color: var(--tui-warning);
+}
+
+.tui-info-value.status-archived {
+  color: var(--tui-warning);
 }
 
 .editor-shell {
@@ -684,6 +749,16 @@ pl4n-list {
   align-items: center;
   justify-content: center;
   transition: transform 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+}
+
+.undo-redo-icon {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+  stroke-width: 1.8px;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .undo-redo-btn:not(:disabled):hover {

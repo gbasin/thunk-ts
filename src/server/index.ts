@@ -133,6 +133,12 @@ export async function startServer(opts?: Partial<ServerStart>): Promise<void> {
             }
             return await handlers.handleAutosave(req, projectId, segments[4]);
           }
+          if (segments[3] === "archive" && segments.length === 5) {
+            if (req.method !== "POST") {
+              return new Response("Method Not Allowed", { status: 405 });
+            }
+            return await handlers.handleArchive(req, projectId, segments[4]);
+          }
           if (segments[3] === "continue" && segments.length === 5) {
             if (req.method !== "POST") {
               return new Response("Method Not Allowed", { status: 405 });

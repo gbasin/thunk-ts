@@ -333,11 +333,20 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
   prog
     .command("list")
     .describe("List all planning sessions")
+    .option("--archived", "Show archived sessions only")
+    .option("--all", "Show all sessions, including archived")
     .action(async (opts: Record<string, unknown>) => {
       const manager = new SessionManager(resolvePl4nDir(opts, globalOptions.pl4nDir));
       const pretty = resolvePretty(opts, globalOptions.pretty);
+      const archivedOnly = Boolean(opts.archived ?? opts["archived"]);
+      const all = Boolean(opts.all ?? opts["all"]);
 
-      const sessions = await manager.listSessions();
+      if (archivedOnly && all) {
+        exitWithError({ error: "Use either --archived or --all, not both" }, pretty);
+      }
+
+      const archivedFilter = archivedOnly ? "only" : all ? "all" : "exclude";
+      const sessions = await manager.listSessions({ archived: archivedFilter });
       outputJson(
         {
           sessions: sessions.map((session) => ({
@@ -345,6 +354,7 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
             task: session.task,
             turn: session.turn,
             phase: session.phase,
+            archived: session.archived,
             updated_at: session.updatedAt.toISOString(),
           })),
         },
@@ -650,6 +660,48 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
       } else {
         exitWithError({ error: `Session ${sessionId} not found` }, pretty);
       }
+    });
+
+  prog
+    .command("archive")
+    .describe("Archive a session")
+    .option("--session", "Session ID")
+    .action(async (opts: Record<string, unknown>) => {
+      const manager = new SessionManager(resolvePl4nDir(opts, globalOptions.pl4nDir));
+      const pretty = resolvePretty(opts, globalOptions.pretty);
+      const sessionId = opts.session as string | undefined;
+
+      if (!sessionId) {
+        exitWithError({ error: "Missing --session" }, pretty);
+      }
+
+      const updated = await manager.setArchived(sessionId, true);
+      if (!updated) {
+        exitWithError({ error: `Session ${sessionId} not found` }, pretty);
+      }
+
+      outputJson({ session_id: sessionId, archived: true }, pretty);
+    });
+
+  prog
+    .command("unarchive")
+    .describe("Unarchive a session")
+    .option("--session", "Session ID")
+    .action(async (opts: Record<string, unknown>) => {
+      const manager = new SessionManager(resolvePl4nDir(opts, globalOptions.pl4nDir));
+      const pretty = resolvePretty(opts, globalOptions.pretty);
+      const sessionId = opts.session as string | undefined;
+
+      if (!sessionId) {
+        exitWithError({ error: "Missing --session" }, pretty);
+      }
+
+      const updated = await manager.setArchived(sessionId, false);
+      if (!updated) {
+        exitWithError({ error: `Session ${sessionId} not found` }, pretty);
+      }
+
+      outputJson({ session_id: sessionId, archived: false }, pretty);
     });
 
   prog
