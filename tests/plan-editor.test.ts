@@ -1,4 +1,5 @@
 import { beforeAll, afterAll, describe, expect, it } from "bun:test";
+import { TextSelection } from "prosemirror-state";
 import { Window } from "happy-dom";
 
 let originalWindow: unknown;
@@ -45,6 +46,177 @@ describe("PlanEditor", () => {
 
     editor.destroy();
     expect(root.querySelector(".plan-editor-container")).toBeNull();
+  });
+
+  it("renders line numbers for logical lines", async () => {
+    const { PlanEditor } = await import("../src/web/plan-editor");
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const content = "# Title\n\nParagraph line one\nParagraph line two\n";
+    const editor = new PlanEditor(root, { value: content, baseline: content });
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    const lineNumbers = root.querySelectorAll(".plan-editor-line-number");
+    expect(lineNumbers.length).toBeGreaterThan(0);
+
+    editor.destroy();
+    root.remove();
+  });
+
+  it("collapses content under headings", async () => {
+    const { PlanEditor } = await import("../src/web/plan-editor");
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const content = "# Title\n\nParagraph\n\n## Subheading\n\nMore text\n";
+    const editor = new PlanEditor(root, { value: content, baseline: content });
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    const toggle = root.querySelector(".plan-editor-line-toggle") as HTMLElement | null;
+    expect(toggle).not.toBeNull();
+    toggle?.click();
+
+    const collapsed = root.querySelectorAll(".pm-collapsed");
+    expect(collapsed.length).toBeGreaterThan(0);
+
+    editor.destroy();
+    root.remove();
+  });
+
+  it("shows markdown prefix for active heading", async () => {
+    const { PlanEditor } = await import("../src/web/plan-editor");
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const content = "## Title\n";
+    const editor = new PlanEditor(root, { value: content, baseline: content });
+
+    const view = (editor as unknown as { view: unknown }).view as {
+      state: { doc: { descendants: (fn: (node: any, pos: number) => boolean) => void } };
+      dispatch: (tr: unknown) => void;
+    };
+    let headingPos: number | null = null;
+    view.state.doc.descendants((node, pos) => {
+      if (node.type.name === "heading") {
+        headingPos = pos;
+        return false;
+      }
+      return true;
+    });
+    expect(headingPos).not.toBeNull();
+    if (headingPos !== null) {
+      const cursorPos = headingPos + 1;
+      const tr = (view as any).state.tr.setSelection(
+        TextSelection.create((view as any).state.doc, cursorPos),
+      );
+      view.dispatch(tr);
+    }
+
+    const headingEl = root.querySelector("h2") as HTMLElement | null;
+    expect(headingEl).not.toBeNull();
+    expect(headingEl?.classList.contains("pm-heading-editing")).toBe(true);
+    expect(headingEl?.getAttribute("data-md-prefix")).toBe("## ");
+
+    editor.destroy();
+    root.remove();
+  });
+
+  it("adjusts heading level via markdown-style edits", async () => {
+    const { PlanEditor } = await import("../src/web/plan-editor");
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const content = "## Title\n";
+    const editor = new PlanEditor(root, { value: content, baseline: content });
+    const view = (editor as unknown as { view: any }).view as any;
+
+    const findHeading = (): { pos: number; node: any } | null => {
+      let found: { pos: number; node: any } | null = null;
+      view.state.doc.descendants((node: any, pos: number) => {
+        if (node.type.name === "heading") {
+          found = { pos, node };
+          return false;
+        }
+        return true;
+      });
+      return found;
+    };
+
+    const setCursorToHeadingStart = () => {
+      const heading = findHeading();
+      if (!heading) {
+        return null;
+      }
+      const cursorPos = heading.pos + 1;
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cursorPos)));
+      return cursorPos;
+    };
+
+    const cursorPos = setCursorToHeadingStart();
+    expect(cursorPos).not.toBeNull();
+
+    const handled = view.someProp("handleTextInput", (f: any) =>
+      f(view, cursorPos, cursorPos, "#"),
+    );
+    expect(handled).toBe(true);
+    expect(findHeading()?.node.attrs.level).toBe(3);
+
+    setCursorToHeadingStart();
+    view.someProp("handleKeyDown", (f: any) =>
+      f(view, new window.KeyboardEvent("keydown", { key: "Backspace" })),
+    );
+    expect(findHeading()?.node.attrs.level).toBe(2);
+
+    setCursorToHeadingStart();
+    view.someProp("handleKeyDown", (f: any) =>
+      f(view, new window.KeyboardEvent("keydown", { key: "Backspace" })),
+    );
+    expect(findHeading()?.node.attrs.level).toBe(1);
+
+    setCursorToHeadingStart();
+    view.someProp("handleKeyDown", (f: any) =>
+      f(view, new window.KeyboardEvent("keydown", { key: "Backspace" })),
+    );
+    expect(findHeading()).toBeNull();
+    expect(view.state.doc.firstChild?.type.name).toBe("paragraph");
+
+    editor.destroy();
+    root.remove();
+  });
+
+  it("shows markdown prefix for active list item", async () => {
+    const { PlanEditor } = await import("../src/web/plan-editor");
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const content = "- One\n- Two";
+    const editor = new PlanEditor(root, { value: content, baseline: content });
+
+    const view = (editor as unknown as { view: unknown }).view as {
+      state: { doc: { descendants: (fn: (node: any, pos: number) => boolean) => void } };
+      dispatch: (tr: unknown) => void;
+    };
+    let paragraphPos: number | null = null;
+    view.state.doc.descendants((node, pos) => {
+      if (node.type.name === "paragraph") {
+        paragraphPos = pos;
+        return false;
+      }
+      return true;
+    });
+    expect(paragraphPos).not.toBeNull();
+    if (paragraphPos !== null) {
+      const cursorPos = paragraphPos + 1;
+      const tr = (view as any).state.tr.setSelection(
+        TextSelection.create((view as any).state.doc, cursorPos),
+      );
+      view.dispatch(tr);
+    }
+
+    const prefix = root.querySelector(".pm-list-editing-prefix") as HTMLElement | null;
+    expect(prefix).not.toBeNull();
+    expect(prefix?.textContent).toBe("- ");
+
+    editor.destroy();
+    root.remove();
   });
 
   it("supports read-only and history actions", async () => {

@@ -9,7 +9,7 @@
  * - Full-screen diagram viewer with pinch-to-zoom
  */
 
-import { EditorState, Transaction, Plugin } from "prosemirror-state";
+import { EditorState, Transaction, Plugin, PluginKey } from "prosemirror-state";
 import { EditorView, Decoration, DecorationSet } from "prosemirror-view";
 import { keymap } from "prosemirror-keymap";
 import { baseKeymap, toggleMark } from "prosemirror-commands";
@@ -33,6 +33,12 @@ export interface PlanEditorOptions {
 
 // Shared state for diff highlighting
 let baselineDoc: Node | null = null;
+
+type SectionFoldState = {
+  collapsed: Set<number>;
+};
+
+const sectionFoldKey = new PluginKey<SectionFoldState>("section-fold");
 
 // Extract plain text with position mapping from a doc
 function extractTextWithPositions(doc: Node): { text: string; positions: number[] } {
@@ -120,6 +126,7 @@ function createDiffDecorations(doc: Node, baseline: Node | null): DecorationSet 
       current.positions[insertIdx] ??
       (current.positions.length > 0 ? current.positions[current.positions.length - 1] + 1 : 0);
     let safePos = Math.max(0, Math.min(markerPos, doc.content.size));
+    // For single-line content, try to place widget inside a textblock
     if (!removedText.includes("\n") && safePos > 0) {
       const resolved = doc.resolve(safePos);
       if (!resolved.parent.isTextblock) {
@@ -129,16 +136,59 @@ function createDiffDecorations(doc: Node, baseline: Node | null): DecorationSet 
         }
       }
     }
+
+    // Check if we're about to place a widget inside a heading
+    // If so, place it BEFORE the heading instead
+    if (safePos > 0) {
+      const resolved = doc.resolve(safePos);
+      for (let d = resolved.depth; d > 0; d--) {
+        const node = resolved.node(d);
+        if (node.type.name === "heading") {
+          // Move to before the heading
+          safePos = resolved.before(d);
+          break;
+        }
+      }
+    }
+
+    // Check if removed text contains newlines (multi-line deletion)
+    const hasNewlines = removedText.includes("\n");
+
     decorations.push(
       Decoration.widget(
         safePos,
         () => {
-          const ghost = document.createElement("span");
-          ghost.className = "diff-removed";
-          ghost.textContent = removedText;
-          ghost.setAttribute("aria-hidden", "true");
-          ghost.contentEditable = "false";
-          return ghost;
+          if (hasNewlines) {
+            // Multi-line: render each line as a separate div to prevent overlap
+            const container = document.createElement("span");
+            container.className = "diff-removed-block";
+            container.setAttribute("aria-hidden", "true");
+            container.contentEditable = "false";
+
+            const lines = removedText.split("\n");
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i];
+              if (line) {
+                const lineEl = document.createElement("span");
+                lineEl.className = "diff-removed-line";
+                lineEl.textContent = line;
+                container.appendChild(lineEl);
+              }
+              // Add line break between lines (but not after last)
+              if (i < lines.length - 1) {
+                container.appendChild(document.createElement("br"));
+              }
+            }
+            return container;
+          } else {
+            // Single line: use simple span
+            const ghost = document.createElement("span");
+            ghost.className = "diff-removed";
+            ghost.textContent = removedText;
+            ghost.setAttribute("aria-hidden", "true");
+            ghost.contentEditable = "false";
+            return ghost;
+          }
         },
         { side: 1, ignoreSelection: true },
       ),
@@ -182,6 +232,54 @@ function createDiffDecorations(doc: Node, baseline: Node | null): DecorationSet 
   return DecorationSet.create(doc, decorations);
 }
 
+function buildSectionFoldDecorations(doc: Node, collapsed: Set<number>): DecorationSet {
+  const decorations: Decoration[] = [];
+  const headings: Array<{ pos: number; level: number; size: number }> = [];
+
+  doc.nodesBetween(0, doc.content.size, (node, pos) => {
+    if (node.type.name === "heading") {
+      headings.push({
+        pos,
+        level: Number(node.attrs.level || 1),
+        size: node.nodeSize,
+      });
+      return false;
+    }
+    return true;
+  });
+
+  for (let i = 0; i < headings.length; i++) {
+    const heading = headings[i];
+    const isCollapsed = collapsed.has(heading.pos);
+    if (!isCollapsed) {
+      continue;
+    }
+
+    const from = heading.pos + heading.size;
+    let to = doc.content.size;
+    for (let j = i + 1; j < headings.length; j++) {
+      if (headings[j].level <= heading.level) {
+        to = headings[j].pos;
+        break;
+      }
+    }
+
+    if (to <= from) {
+      continue;
+    }
+
+    doc.nodesBetween(from, to, (node, pos) => {
+      if (node.isBlock) {
+        decorations.push(Decoration.node(pos, pos + node.nodeSize, { class: "pm-collapsed" }));
+        return false;
+      }
+      return true;
+    });
+  }
+
+  return DecorationSet.create(doc, decorations);
+}
+
 function diffPlugin(): Plugin {
   return new Plugin({
     state: {
@@ -198,6 +296,302 @@ function diffPlugin(): Plugin {
     props: {
       decorations(state) {
         return this.getState(state);
+      },
+    },
+  });
+}
+
+function sectionFoldPlugin(): Plugin<SectionFoldState> {
+  return new Plugin({
+    key: sectionFoldKey,
+    state: {
+      init: () => ({ collapsed: new Set() }),
+      apply(tr, value) {
+        let collapsed = new Set<number>();
+        for (const pos of value.collapsed) {
+          const mappedPos = tr.mapping.map(pos);
+          const node = tr.doc.nodeAt(mappedPos);
+          if (node?.type.name === "heading") {
+            collapsed.add(mappedPos);
+          }
+        }
+
+        const meta = tr.getMeta(sectionFoldKey) as { type: "toggle"; pos: number } | undefined;
+        if (meta?.type === "toggle") {
+          if (collapsed.has(meta.pos)) {
+            collapsed.delete(meta.pos);
+          } else {
+            collapsed.add(meta.pos);
+          }
+        }
+
+        return { collapsed };
+      },
+    },
+    props: {
+      decorations(state) {
+        const pluginState = sectionFoldKey.getState(state);
+        if (!pluginState) {
+          return null;
+        }
+        return buildSectionFoldDecorations(state.doc, pluginState.collapsed);
+      },
+    },
+  });
+}
+
+type ActiveHeading = {
+  pos: number;
+  node: Node;
+};
+
+type ActiveListItem = {
+  pos: number;
+  node: Node;
+  list: Node;
+  index: number;
+  paragraphPos: number;
+};
+
+function getActiveHeading(state: EditorState): ActiveHeading | null {
+  const { $from, $to } = state.selection;
+  if (!$from.sameParent($to)) {
+    return null;
+  }
+  const parent = $from.parent;
+  if (parent.type.name !== "heading") {
+    return null;
+  }
+  return { pos: $from.before(), node: parent };
+}
+
+function getActiveListItem(state: EditorState): ActiveListItem | null {
+  const { $from, $to } = state.selection;
+  if (!$from.sameParent($to)) {
+    return null;
+  }
+  if ($from.parent.type.name !== "paragraph") {
+    return null;
+  }
+
+  for (let depth = $from.depth; depth > 0; depth--) {
+    const node = $from.node(depth);
+    if (node.type.name !== "list_item") {
+      continue;
+    }
+    const listDepth = depth - 1;
+    if (listDepth < 0) {
+      return null;
+    }
+    const list = $from.node(listDepth);
+    if (!list || (list.type.name !== "bullet_list" && list.type.name !== "ordered_list")) {
+      return null;
+    }
+    const index = $from.index(listDepth);
+    const listItemPos = $from.before(depth);
+    return {
+      pos: listItemPos,
+      node,
+      list,
+      index,
+      paragraphPos: $from.before(),
+    };
+  }
+
+  return null;
+}
+
+function isAtHeadingStart(state: EditorState, headingPos: number): boolean {
+  return state.selection.empty && state.selection.from === headingPos + 1;
+}
+
+function updateHeadingLevel(
+  view: EditorView,
+  heading: ActiveHeading,
+  nextLevel: number | null,
+): boolean {
+  const { state } = view;
+  const { schema } = state;
+
+  if (nextLevel === null) {
+    view.dispatch(state.tr.setNodeMarkup(heading.pos, schema.nodes.paragraph));
+    return true;
+  }
+
+  const currentLevel = Number(heading.node.attrs.level || 1);
+  const clampedLevel = Math.max(1, Math.min(6, nextLevel));
+  if (clampedLevel === currentLevel) {
+    return true;
+  }
+
+  view.dispatch(state.tr.setNodeMarkup(heading.pos, schema.nodes.heading, { level: clampedLevel }));
+  return true;
+}
+
+function headingEditPlugin(): Plugin {
+  return new Plugin({
+    props: {
+      decorations(state) {
+        const heading = getActiveHeading(state);
+        if (!heading) {
+          return DecorationSet.empty;
+        }
+        const level = Math.max(1, Math.min(6, Number(heading.node.attrs.level || 1)));
+        return DecorationSet.create(state.doc, [
+          Decoration.node(heading.pos, heading.pos + heading.node.nodeSize, {
+            class: "pm-heading-editing",
+            "data-md-prefix": "#".repeat(level) + " ",
+          }),
+        ]);
+      },
+      handleTextInput(view, from, to, text) {
+        if (from !== to) {
+          return false;
+        }
+        const heading = getActiveHeading(view.state);
+        if (!heading || !isAtHeadingStart(view.state, heading.pos)) {
+          return false;
+        }
+        if (!/^#+$/.test(text)) {
+          return false;
+        }
+        const level = Number(heading.node.attrs.level || 1);
+        return updateHeadingLevel(view, heading, level + text.length);
+      },
+      handleKeyDown(view, event) {
+        if (event.key !== "Backspace") {
+          return false;
+        }
+        const heading = getActiveHeading(view.state);
+        if (!heading || !isAtHeadingStart(view.state, heading.pos)) {
+          return false;
+        }
+        event.preventDefault();
+        const level = Number(heading.node.attrs.level || 1);
+        if (level > 1) {
+          return updateHeadingLevel(view, heading, level - 1);
+        }
+        return updateHeadingLevel(view, heading, null);
+      },
+    },
+  });
+}
+
+function listEditPlugin(): Plugin {
+  return new Plugin({
+    props: {
+      decorations(state) {
+        const listItem = getActiveListItem(state);
+        if (!listItem) {
+          return DecorationSet.empty;
+        }
+        let prefix = "- ";
+        if (listItem.list.type.name === "ordered_list") {
+          const order = Number(listItem.list.attrs.order || 1);
+          prefix = `${order + listItem.index}. `;
+        }
+        return DecorationSet.create(state.doc, [
+          Decoration.node(listItem.pos, listItem.pos + listItem.node.nodeSize, {
+            class: "pm-list-editing",
+          }),
+          Decoration.widget(
+            listItem.paragraphPos + 1,
+            () => {
+              const span = document.createElement("span");
+              span.className = "pm-list-editing-prefix";
+              span.textContent = prefix;
+              span.style.setProperty("--md-prefix-width", `${prefix.length}ch`);
+              span.setAttribute("aria-hidden", "true");
+              span.contentEditable = "false";
+              return span;
+            },
+            { side: -1, ignoreSelection: true },
+          ),
+        ]);
+      },
+      handleKeyDown(view, event) {
+        // Handle backspace/delete to prevent content merge with headings after lists
+        if (event.key !== "Backspace" && event.key !== "Delete") {
+          return false;
+        }
+
+        const { state } = view;
+        const { selection } = state;
+
+        // Only handle non-empty selections
+        if (selection.empty) {
+          return false;
+        }
+
+        const $from = state.doc.resolve(selection.from);
+
+        // Find all lists in the ancestry (from innermost to outermost)
+        // We need to find the top-level list that is followed by a heading
+        const listsInAncestry: Array<{
+          depth: number;
+          node: Node;
+          start: number;
+          end: number;
+        }> = [];
+
+        for (let d = $from.depth; d >= 0; d--) {
+          const node = $from.node(d);
+          if (node.type.name === "bullet_list" || node.type.name === "ordered_list") {
+            const start = $from.before(d);
+            listsInAncestry.push({
+              depth: d,
+              node,
+              start,
+              end: start + node.nodeSize,
+            });
+          }
+        }
+
+        if (listsInAncestry.length === 0) {
+          return false;
+        }
+
+        // Find the outermost list that is followed by a heading
+        // Start from outermost (last in array) and work inward
+        let targetList = null;
+        for (let i = listsInAncestry.length - 1; i >= 0; i--) {
+          const list = listsInAncestry[i];
+          if (list.end >= state.doc.content.size) {
+            continue;
+          }
+          const afterList = state.doc.resolve(list.end);
+          const nextNode = afterList.nodeAfter;
+          if (nextNode && nextNode.type.name === "heading") {
+            targetList = list;
+            break;
+          }
+        }
+
+        if (!targetList) {
+          return false;
+        }
+
+        // Check if this is a single-item list
+        const isSingleItemList = targetList.node.childCount === 1;
+
+        // Check if selection covers most of the list's text content
+        const listTextContent = targetList.node.textContent || "";
+        const selectedText = state.doc.textBetween(selection.from, selection.to);
+
+        // If selection covers significant portion of the single-item list content
+        // we need to handle this specially to prevent heading merge
+        if (isSingleItemList && selectedText.length >= listTextContent.length * 0.5) {
+          event.preventDefault();
+
+          // Delete the entire list to prevent partial content merging with heading
+          const tr = state.tr;
+          tr.delete(targetList.start, targetList.end);
+          view.dispatch(tr);
+          return true;
+        }
+
+        // For multi-item lists or partial selections, let ProseMirror handle normally
+        return false;
       },
     },
   });
@@ -750,10 +1144,15 @@ class TableNodeView {
 
 export class PlanEditor {
   private container: HTMLElement;
+  private editorHost: HTMLElement;
   private view: EditorView;
   private baseline: string = "";
   private options: PlanEditorOptions;
   private diagramViewer: DiagramViewer;
+  private lineNumbers: HTMLElement;
+  private lineNumbersFrame: number | null = null;
+  private resizeHandler: (() => void) | null = null;
+  private scrollHandler: (() => void) | null = null;
 
   constructor(parent: HTMLElement, options: PlanEditorOptions = {}) {
     this.options = options;
@@ -765,6 +1164,24 @@ export class PlanEditor {
     // Create container
     this.container = document.createElement("div");
     this.container.className = "plan-editor-container";
+
+    this.lineNumbers = document.createElement("div");
+    this.lineNumbers.className = "plan-editor-gutter";
+    const gutterInner = document.createElement("div");
+    gutterInner.className = "plan-editor-gutter-inner";
+    const gutterToggles = document.createElement("div");
+    gutterToggles.className = "plan-editor-gutter-col plan-editor-gutter-toggles";
+    const gutterLines = document.createElement("div");
+    gutterLines.className = "plan-editor-gutter-col plan-editor-gutter-lines";
+    gutterInner.appendChild(gutterToggles);
+    gutterInner.appendChild(gutterLines);
+    this.lineNumbers.appendChild(gutterInner);
+
+    this.editorHost = document.createElement("div");
+    this.editorHost.className = "plan-editor-host-inner";
+
+    this.container.appendChild(this.lineNumbers);
+    this.container.appendChild(this.editorHost);
     parent.appendChild(this.container);
 
     // Parse initial content
@@ -789,6 +1206,9 @@ export class PlanEditor {
             })),
           ],
         }),
+        // listEditPlugin needs to be before baseKeymap to intercept Backspace/Delete
+        // before ProseMirror's default handling
+        listEditPlugin(),
         keymap({
           "Mod-b": toggleMark(schema.marks.strong),
           "Mod-i": toggleMark(schema.marks.em),
@@ -802,11 +1222,13 @@ export class PlanEditor {
         }),
         keymap(baseKeymap),
         diffPlugin(),
+        sectionFoldPlugin(),
+        headingEditPlugin(),
       ],
     });
 
     // Create editor view
-    this.view = new EditorView(this.container, {
+    this.view = new EditorView(this.editorHost, {
       state,
       editable: () => !options.readOnly,
       nodeViews: {
@@ -854,12 +1276,20 @@ export class PlanEditor {
           const markdown = serializeMarkdown(newState.doc);
           this.options.onChange?.(markdown);
         }
+        this.scheduleLineNumberUpdate();
       },
       attributes: {
         class: "plan-editor",
         spellcheck: "true",
       },
     });
+
+    this.scrollHandler = () => this.scheduleLineNumberUpdate();
+    this.container.addEventListener("scroll", this.scrollHandler);
+
+    this.scheduleLineNumberUpdate();
+    this.resizeHandler = () => this.scheduleLineNumberUpdate();
+    window.addEventListener("resize", this.resizeHandler);
   }
 
   /** Get current content as markdown */
@@ -872,6 +1302,7 @@ export class PlanEditor {
     const doc = parseMarkdown(value);
     const tr = this.view.state.tr.replaceWith(0, this.view.state.doc.content.size, doc.content);
     this.view.dispatch(tr);
+    this.scheduleLineNumberUpdate();
   }
 
   /** Set baseline for diff comparison */
@@ -880,6 +1311,7 @@ export class PlanEditor {
     baselineDoc = parseMarkdown(baseline);
     // Trigger a transaction to recalculate decorations
     this.view.dispatch(this.view.state.tr);
+    this.scheduleLineNumberUpdate();
   }
 
   /** Set read-only state */
@@ -912,8 +1344,177 @@ export class PlanEditor {
 
   /** Destroy and clean up */
   destroy(): void {
+    if (this.lineNumbersFrame !== null) {
+      if (typeof cancelAnimationFrame === "function") {
+        cancelAnimationFrame(this.lineNumbersFrame);
+      } else {
+        clearTimeout(this.lineNumbersFrame);
+      }
+      this.lineNumbersFrame = null;
+    }
+    if (this.resizeHandler) {
+      window.removeEventListener("resize", this.resizeHandler);
+      this.resizeHandler = null;
+    }
+    if (this.scrollHandler) {
+      this.container.removeEventListener("scroll", this.scrollHandler);
+      this.scrollHandler = null;
+    }
     this.view.destroy();
     this.container.remove();
     this.diagramViewer.destroy();
+  }
+
+  private scheduleLineNumberUpdate(): void {
+    if (this.lineNumbersFrame !== null) {
+      return;
+    }
+    const schedule =
+      typeof requestAnimationFrame === "function"
+        ? requestAnimationFrame
+        : (callback: FrameRequestCallback) => window.setTimeout(callback, 16);
+    this.lineNumbersFrame = schedule(() => {
+      this.lineNumbersFrame = null;
+      this.updateLineNumbers();
+    });
+  }
+
+  private getHeadingPosFromDom(el: Element): number | null {
+    try {
+      const pos = this.view.posAtDOM(el, 0);
+      const resolved = this.view.state.doc.resolve(pos);
+      for (let depth = resolved.depth; depth > 0; depth--) {
+        const node = resolved.node(depth);
+        if (node.type.name === "heading") {
+          return resolved.before(depth);
+        }
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+
+  private collectLineEntries(): Array<{ top: number; headingPos?: number; hidden: boolean }> {
+    const root = this.view.dom as HTMLElement | null;
+    if (!root) {
+      return [];
+    }
+
+    const lineEntries: Array<{ top: number; headingPos?: number; hidden: boolean }> = [];
+    const selector = [
+      "h1",
+      "h2",
+      "h3",
+      "h4",
+      "h5",
+      "h6",
+      "p",
+      "li",
+      "pre",
+      ".table-widget thead tr",
+      ".table-widget tbody tr",
+    ].join(", ");
+
+    const elements = Array.from(root.querySelectorAll(selector));
+    const pushTop = (top: number, hidden: boolean, headingPos?: number) => {
+      lineEntries.push({ top, headingPos, hidden });
+    };
+
+    for (const el of elements) {
+      const hidden = Boolean(el.closest(".pm-collapsed"));
+      const tag = el.tagName.toLowerCase();
+      if (tag === "p" && el.closest("li")) {
+        continue;
+      }
+      if (tag === "pre") {
+        const text = el.textContent ?? "";
+        const lineCount = Math.max(1, text.split("\n").length);
+        const rect = el.getBoundingClientRect();
+        const computed = window.getComputedStyle(el);
+        const lineHeight = parseFloat(computed.lineHeight);
+        const fallbackHeight = lineCount > 0 ? rect.height / lineCount : 16;
+        const step =
+          Number.isFinite(lineHeight) && lineHeight > 0
+            ? lineHeight
+            : Number.isFinite(fallbackHeight) && fallbackHeight > 0
+              ? fallbackHeight
+              : 16;
+        for (let i = 0; i < lineCount; i++) {
+          pushTop(rect.top + step * i, hidden);
+        }
+        continue;
+      }
+
+      const rect = el.getBoundingClientRect();
+      const headingPos = tag.startsWith("h")
+        ? (this.getHeadingPosFromDom(el) ?? undefined)
+        : undefined;
+      pushTop(rect.top, hidden, headingPos);
+    }
+
+    return lineEntries;
+  }
+
+  private updateLineNumbers(): void {
+    const gutterInner = this.lineNumbers.querySelector(
+      ".plan-editor-gutter-inner",
+    ) as HTMLElement | null;
+    if (!gutterInner) {
+      return;
+    }
+
+    const gutterToggles = gutterInner.querySelector(
+      ".plan-editor-gutter-toggles",
+    ) as HTMLElement | null;
+    const gutterLines = gutterInner.querySelector(
+      ".plan-editor-gutter-lines",
+    ) as HTMLElement | null;
+    if (!gutterToggles || !gutterLines) {
+      return;
+    }
+
+    gutterToggles.innerHTML = "";
+    gutterLines.innerHTML = "";
+
+    const gutterRect = gutterInner.getBoundingClientRect();
+    const lineEntries = this.collectLineEntries();
+    if (lineEntries.length === 0) {
+      return;
+    }
+
+    const foldState = sectionFoldKey.getState(this.view.state);
+    const collapsed = foldState?.collapsed ?? new Set<number>();
+
+    for (let i = 0; i < lineEntries.length; i++) {
+      const entry = lineEntries[i];
+      if (entry.hidden) {
+        continue;
+      }
+      const top = Math.round(entry.top - gutterRect.top);
+      if (entry.headingPos !== undefined) {
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "plan-editor-line-toggle";
+        const isCollapsed = collapsed.has(entry.headingPos);
+        toggle.textContent = isCollapsed ? ">" : "v";
+        toggle.setAttribute("aria-label", isCollapsed ? "Expand section" : "Collapse section");
+        toggle.dataset.headingPos = String(entry.headingPos);
+        toggle.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          this.view.dispatch(
+            this.view.state.tr.setMeta(sectionFoldKey, { type: "toggle", pos: entry.headingPos! }),
+          );
+        });
+        toggle.style.top = `${top}px`;
+        gutterToggles.appendChild(toggle);
+      }
+      const el = document.createElement("div");
+      el.className = "plan-editor-line-number";
+      el.textContent = String(i + 1);
+      el.style.top = `${top}px`;
+      gutterLines.appendChild(el);
+    }
   }
 }

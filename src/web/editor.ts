@@ -3,25 +3,55 @@ import * as Diff from "diff";
 import { PlanEditor } from "./plan-editor.js";
 import { buildLineDiff, type LineChange } from "./diff-render.js";
 import { type ActivityEvent, formatActivity, openActivityStream } from "./notifications.js";
+import { parseMarkdown, serializeMarkdown } from "./prosemirror-schema.js";
 
 function formatPhase(phase: string): string {
   return phase.replace(/_/g, " ");
 }
 
+function normalizeMarkdown(content: string): string {
+  return serializeMarkdown(parseMarkdown(content));
+}
+
 type AgentStatusMap = Record<string, string>;
 type DiffDisplayLine = LineChange | { type: "collapsed"; count: number };
 
-function formatAgentStatus(agents: AgentStatusMap | undefined): string {
-  if (!agents || Object.keys(agents).length === 0) {
-    return "";
+function getAgentStatusInfo(status: string): { icon: string; label: string; className: string } {
+  switch (status) {
+    case "working":
+      return {
+        icon: "●",
+        label: "Working - Agent is currently processing",
+        className: "agent-working",
+      };
+    case "done":
+      return { icon: "✓", label: "Done - Agent completed successfully", className: "agent-done" };
+    case "error":
+      return { icon: "✗", label: "Error - Agent encountered a problem", className: "agent-error" };
+    default:
+      return { icon: "○", label: "Idle - Agent is waiting", className: "agent-idle" };
   }
-  return Object.entries(agents)
-    .map(([id, status]) => {
-      const icon =
-        status === "working" ? "●" : status === "done" ? "✓" : status === "error" ? "✗" : "○";
-      return `${icon} ${id}`;
-    })
-    .join("  ");
+}
+
+function renderAgentStatusNodes(agents: AgentStatusMap | undefined): DocumentFragment {
+  const fragment = document.createDocumentFragment();
+  if (!agents || Object.keys(agents).length === 0) {
+    return fragment;
+  }
+  let first = true;
+  for (const [id, status] of Object.entries(agents)) {
+    if (!first) {
+      fragment.append(" ");
+    }
+    first = false;
+    const info = getAgentStatusInfo(status);
+    const span = document.createElement("span");
+    span.className = `agent-status-item ${info.className}`;
+    span.title = info.label;
+    span.textContent = `${info.icon} ${id}`;
+    fragment.append(span);
+  }
+  return fragment;
 }
 
 class Pl4nEditor extends LitElement {
@@ -52,9 +82,11 @@ class Pl4nEditor extends LitElement {
   private editor: PlanEditor | null = null;
   private mtime = 0;
   private dirty = false;
+  private suppressChange = false;
   private saving = false;
   private continuing = false;
   private statusMessage = "Loading plan...";
+  private showSavedFlash = false;
   private autosaveTimer: number | null = null;
   private pollTimer: number | null = null;
   private autosaveContent: string | null = null;
@@ -116,6 +148,9 @@ class Pl4nEditor extends LitElement {
       baseline: "",
       readOnly: this.readOnly,
       onChange: () => {
+        if (this.suppressChange) {
+          return;
+        }
         this.dirty = true;
         this.statusMessage = "Unsaved changes";
         this.scheduleAutosave();
@@ -143,7 +178,8 @@ class Pl4nEditor extends LitElement {
   private updateAgentStatusDisplay() {
     const el = document.getElementById("agent-status");
     if (el) {
-      el.textContent = formatAgentStatus(this.agents);
+      el.textContent = "";
+      el.append(renderAgentStatusNodes(this.agents));
     }
   }
 
@@ -188,7 +224,7 @@ class Pl4nEditor extends LitElement {
   }
 
   private async saveAutosave() {
-    if (!this.editor || this.readOnly) {
+    if (!this.editor || this.readOnly || this.saving) {
       return;
     }
     const content = this.editor.getValue();
@@ -280,18 +316,26 @@ class Pl4nEditor extends LitElement {
       this.phase = data.phase;
       this.readOnly = data.readOnly;
       this.archived = data.archived;
-      this.showAutosaveBanner = data.hasAutosave;
-      this.autosaveContent = data.autosave;
-      this.snapshotContent = data.snapshot;
-      this.lastLoadedContent = data.content;
+      const normalizedContent = normalizeMarkdown(data.content);
+      const normalizedSnapshot = data.snapshot ? normalizeMarkdown(data.snapshot) : null;
+      const normalizedAutosave = data.autosave ? normalizeMarkdown(data.autosave) : null;
+      this.snapshotContent = normalizedSnapshot;
+      this.lastLoadedContent = normalizedContent;
+      // Only show autosave banner if the autosave content differs from the loaded content
+      // (handles race condition where autosave fires after save, creating identical file)
+      const autosaveDiffers = data.hasAutosave && normalizedAutosave !== normalizedContent;
+      this.showAutosaveBanner = autosaveDiffers;
+      this.autosaveContent = autosaveDiffers ? normalizedAutosave : null;
       this.agents = data.agents ?? {};
       this.updateAgentStatusDisplay();
       this.updateArchivedIndicator();
 
       if (this.editor) {
-        this.editor.setBaseline(data.content);
-        this.editor.setValue(data.content);
+        this.suppressChange = true;
+        this.editor.setValue(normalizedContent);
+        this.editor.setBaseline(normalizedContent);
         this.editor.setReadOnly(data.readOnly);
+        this.suppressChange = false;
       }
 
       this.dirty = false;
@@ -350,13 +394,16 @@ function hello() {
 
 Try editing this text to see the diff highlighting in action!`;
 
-    this.lastLoadedContent = testContent;
-    this.snapshotContent = testContent;
+    const normalizedContent = normalizeMarkdown(testContent);
+    this.lastLoadedContent = normalizedContent;
+    this.snapshotContent = normalizedContent;
 
     if (this.editor) {
-      this.editor.setBaseline(testContent);
-      this.editor.setValue(testContent);
+      this.suppressChange = true;
+      this.editor.setValue(normalizedContent);
+      this.editor.setBaseline(normalizedContent);
       this.editor.setReadOnly(this.readOnly);
+      this.suppressChange = false;
     }
 
     this.dirty = false;
@@ -404,6 +451,12 @@ Try editing this text to see the diff highlighting in action!`;
         this.lastLoadedContent = content;
         this.editor.setBaseline(content);
         this.statusMessage = "Saved";
+        // Trigger save flash animation
+        this.showSavedFlash = true;
+        window.setTimeout(() => {
+          this.showSavedFlash = false;
+          this.requestUpdate();
+        }, 600);
       } else {
         this.statusMessage = `Save failed (${response.status})`;
       }
@@ -627,7 +680,7 @@ Try editing this text to see the diff highlighting in action!`;
   }
 
   private showDiff() {
-    if (!this.editor) {
+    if (!this.editor || !this.hasChanges()) {
       return;
     }
     this.showChangesDiff = true;
@@ -637,6 +690,14 @@ Try editing this text to see the diff highlighting in action!`;
   private closeChangesDiff() {
     this.showChangesDiff = false;
     this.requestUpdate();
+  }
+
+  private hasChanges(): boolean {
+    if (!this.editor) {
+      return false;
+    }
+    const baseline = this.snapshotContent ?? this.lastLoadedContent;
+    return this.editor.getValue() !== baseline;
   }
 
   private renderAutosaveDiffModal() {
@@ -681,14 +742,30 @@ Try editing this text to see the diff highlighting in action!`;
     `;
   }
 
+  private renderDiffLine(content: unknown, cls: string, lineNumber: number | null) {
+    const displayNumber = lineNumber === null ? "" : String(lineNumber);
+    return html`
+      <div class=${cls}>
+        <span class="diff-line-number">${displayNumber}</span>
+        <span class="diff-line-text">${content}</span>
+      </div>
+    `;
+  }
+
   private renderDiffLines(diff: LineChange[]) {
     const collapsed = this.collapseDiffLines(diff, 2);
     if (collapsed.length === 0) {
       return html`<div class="diff-no-changes">No changes</div>`;
     }
-    return collapsed.map((part) => {
+    const rendered: Array<unknown> = [];
+    let lineNumber = 1;
+    for (const part of collapsed) {
       if (part.type === "collapsed") {
-        return html`<div class="diff-line diff-collapsed">··· ${part.count} unchanged lines ···</div>`;
+        rendered.push(
+          html`<div class="diff-line diff-collapsed">··· ${part.count} unchanged lines ···</div>`,
+        );
+        lineNumber += part.count ?? 0;
+        continue;
       }
       const cls =
         part.type === "add"
@@ -727,10 +804,25 @@ Try editing this text to see the diff highlighting in action!`;
           lines.pop();
         }
 
-        return lines.map((line) => html`<div class=${cls}>${line}</div>`);
+        for (const line of lines) {
+          rendered.push(this.renderDiffLine(line, cls, lineNumber));
+          lineNumber += 1;
+        }
+        continue;
       }
-      return html`<div class=${cls}>${part.value}</div>`;
-    });
+      const lines = part.value.split("\n");
+      if (lines[lines.length - 1] === "") {
+        lines.pop();
+      }
+      for (const line of lines) {
+        const number = part.type === "remove" ? null : lineNumber;
+        rendered.push(this.renderDiffLine(line, cls, number));
+        if (part.type !== "remove") {
+          lineNumber += 1;
+        }
+      }
+    }
+    return rendered;
   }
 
   private collapseDiffLines(diff: LineChange[], contextLines: number): DiffDisplayLine[] {
@@ -858,6 +950,35 @@ Try editing this text to see the diff highlighting in action!`;
       }
     }
 
+    const diffLines: Array<unknown> = [];
+    let lineNumber = 1;
+    for (const part of collapsedDiff) {
+      if (part.type === "collapsed") {
+        diffLines.push(
+          html`<div class="diff-line diff-collapsed">··· ${part.count} unchanged lines ···</div>`,
+        );
+        lineNumber += part.count ?? 0;
+        continue;
+      }
+      const cls =
+        part.type === "add"
+          ? "diff-line diff-add"
+          : part.type === "remove"
+            ? "diff-line diff-remove"
+            : "diff-line";
+      const lines = part.value.split("\n");
+      if (lines[lines.length - 1] === "") {
+        lines.pop();
+      }
+      for (const line of lines) {
+        const number = part.type === "remove" ? null : lineNumber;
+        diffLines.push(this.renderDiffLine(line, cls, number));
+        if (part.type !== "remove") {
+          lineNumber += 1;
+        }
+      }
+    }
+
     return html`
       <div class="continue-confirm-panel">
         <div
@@ -874,18 +995,7 @@ Try editing this text to see the diff highlighting in action!`;
           this.continueConfirmExpanded
             ? html`
               <div class="continue-confirm-diff">
-                ${collapsedDiff.map((part) => {
-                  if (part.type === "collapsed") {
-                    return html`<div class="diff-line diff-collapsed">··· ${part.count} unchanged lines ···</div>`;
-                  }
-                  const cls =
-                    part.type === "add"
-                      ? "diff-line diff-add"
-                      : part.type === "remove"
-                        ? "diff-line diff-remove"
-                        : "diff-line";
-                  return html`<div class=${cls}>${part.value}</div>`;
-                })}
+                ${diffLines}
               </div>
             `
             : null
@@ -906,6 +1016,7 @@ Try editing this text to see the diff highlighting in action!`;
     const sessionsLink = this.globalToken
       ? `/projects/${this.projectId}/sessions?t=${this.globalToken}`
       : `/projects/${this.projectId}/sessions`;
+    const hasChanges = this.hasChanges();
     return html`
       <div class="card editor-shell">
         <div class="header">
@@ -919,7 +1030,6 @@ Try editing this text to see the diff highlighting in action!`;
             <div class="header-meta">Turn ${this.turn} - ${formatPhase(this.phase)}</div>
           </div>
           <div class="header-actions">
-            ${this.renderUndoRedoButtons()}
             ${this.renderArchiveToggle()}
             ${this.archived ? html`<span class="badge archived">Archived</span>` : html``}
             ${approved ? html`<span class="badge approved">Approved</span>` : html``}
@@ -955,12 +1065,18 @@ Try editing this text to see the diff highlighting in action!`;
             this.showContinueConfirm
               ? this.renderContinueConfirmPanel()
               : html`
-                <div class="status ${this.statusMessage.toLowerCase().includes("failed") ? "error" : ""}">${this.statusMessage}</div>
+                <div class="status ${this.statusMessage.toLowerCase().includes("failed") ? "error" : ""} ${this.showSavedFlash ? "saved-flash" : ""}" role="status" aria-live="polite">${this.statusMessage}</div>
                 ${
                   this.readOnly
                     ? html``
                     : html`<div class="button-row">
-                      <button class="button secondary" @click=${() => this.showDiff()}>
+                      ${this.renderUndoRedoButtons()}
+                      <button
+                        class="button secondary"
+                        ?disabled=${!hasChanges}
+                        title=${hasChanges ? "Show changes" : "No changes to show"}
+                        @click=${() => this.showDiff()}
+                      >
                         Show Diff
                       </button>
                       <button class="button" ?disabled=${this.saving} @click=${() => this.save()}>
@@ -987,24 +1103,22 @@ Try editing this text to see the diff highlighting in action!`;
   private renderUndoRedoButtons() {
     if (this.readOnly) return null;
     return html`
-      <div class="undo-redo-float">
-        <button
-          class="undo-redo-btn"
-          @click=${() => this.undo()}
-          title="Undo (Cmd+Z)"
-          aria-label="Undo"
-        >
-          ${this.renderUndoIcon()}
-        </button>
-        <button
-          class="undo-redo-btn"
-          @click=${() => this.redo()}
-          title="Redo (Cmd+Shift+Z)"
-          aria-label="Redo"
-        >
-          ${this.renderRedoIcon()}
-        </button>
-      </div>
+      <button
+        class="button secondary"
+        @click=${() => this.undo()}
+        title="Undo (Cmd+Z)"
+        aria-label="Undo"
+      >
+        Undo
+      </button>
+      <button
+        class="button secondary"
+        @click=${() => this.redo()}
+        title="Redo (Cmd+Shift+Z)"
+        aria-label="Redo"
+      >
+        Redo
+      </button>
     `;
   }
 
@@ -1046,25 +1160,23 @@ Try editing this text to see the diff highlighting in action!`;
       return null;
     }
     return html`
-      <div class="activity-bar">
-        <div class="activity-title">Live activity</div>
-        <div class="activity-items">
-          ${this.activity.slice(0, 3).map(
-            (event) => html`
-              <a
-                class="activity-item"
-                href=${
-                  this.globalToken
-                    ? `/projects/${event.project_id}/sessions?t=${this.globalToken}`
-                    : "/projects"
-                }
-              >
-                <span class="activity-dot ${event.action}"></span>
-                <span>${formatActivity(event)}</span>
-              </a>
-            `,
-          )}
-        </div>
+      <div class="tui-activity">
+        <div class="tui-activity-title">Live activity</div>
+        ${this.activity.slice(0, 3).map(
+          (event) => html`
+            <a
+              class="tui-activity-item"
+              href=${
+                this.globalToken
+                  ? `/projects/${event.project_id}/sessions?t=${this.globalToken}`
+                  : "/projects"
+              }
+            >
+              <span class="tui-activity-dot ${event.action}"></span>
+              <span>${formatActivity(event)}</span>
+            </a>
+          `,
+        )}
       </div>
     `;
   }

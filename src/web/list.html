@@ -14,7 +14,7 @@
     </style>
   </head>
   <body>
-    <div class="tui-page">
+    <div class="tui-page constrained" id="tui-page">
       <div class="tui-title-bar">
         <span class="tui-nav">
           <a class="tui-nav-link" id="nav-projects" href="#">Projects</a>
@@ -22,10 +22,11 @@
         </span>
         <span class="session-name" id="tui-session-name">--</span>
         <span class="font-controls">
-          <button class="font-btn" id="font-down" title="Decrease font size">-</button>
-          <span class="font-size" id="font-size">10</span>
-          <button class="font-btn" id="font-up" title="Increase font size">+</button>
+          <button class="font-btn" id="font-down" title="Decrease font size" aria-label="Decrease font size">-</button>
+          <span class="font-size" id="font-size">14</span>
+          <button class="font-btn" id="font-up" title="Increase font size" aria-label="Increase font size">+</button>
         </span>
+        <button class="tui-width-toggle" id="width-toggle" title="Expand to full width" aria-label="Toggle full width">⛶</button>
       </div>
 
       <div class="tui-info-bar">
@@ -71,8 +72,8 @@
       window.__PL4N_LIST__ = __LIST_DATA__;
     </script>
     <script>
-      let fontSize = 10;
-      const minFontSize = 4;
+      let fontSize = 14;
+      const minFontSize = 10;
       const maxFontSize = 24;
       function updateFontSize(newSize) {
         fontSize = Math.max(minFontSize, Math.min(maxFontSize, newSize));
@@ -83,6 +84,17 @@
       updateFontSize(fontSize);
       document.getElementById('font-up').addEventListener('click', () => updateFontSize(fontSize + 1));
       document.getElementById('font-down').addEventListener('click', () => updateFontSize(fontSize - 1));
+
+      // Width toggle
+      const widthToggle = document.getElementById('width-toggle');
+      const tuiPage = document.getElementById('tui-page');
+      if (widthToggle && tuiPage) {
+        widthToggle.addEventListener('click', () => {
+          tuiPage.classList.toggle('constrained');
+          widthToggle.textContent = tuiPage.classList.contains('constrained') ? '⛶' : '⛷';
+          widthToggle.title = tuiPage.classList.contains('constrained') ? 'Expand to full width' : 'Constrain width';
+        });
+      }
     </script>
     <script type="module" src="/assets/list.js"></script>
   </body>

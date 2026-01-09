@@ -8,7 +8,7 @@
   --tui-bg: #f5f3ef;
   --tui-bg-panel: #eae7e1;
   --tui-fg: #2d2a26;
-  --tui-fg-dim: #524e48; /* darkened for AA contrast */
+  --tui-fg-dim: #454038; /* darkened further for better contrast ~6:1 */
   --tui-fg-bright: #1a1816;
   --tui-highlight: #e0dcd4;
   --tui-selection: #c9d4e8;
@@ -16,10 +16,11 @@
   --tui-accent: #1a5490; /* warmer blue, matches paper */
   --tui-error: #b91c1c; /* stronger red */
   --tui-success: #166534; /* stronger green */
+  --tui-warning: #b45309; /* amber for archived state */
 
   /* Typography */
   --tui-font: "SF Mono", "Menlo", "Monaco", "Consolas", "Liberation Mono", "Courier New", monospace;
-  --tui-font-size: 10px;
+  --tui-font-size: 14px; /* increased from 10px for readability */
   --tui-line-height: 1.4; /* tighter for TUI feel */
 
   /* iOS safe area */
@@ -99,6 +100,44 @@ body {
   padding-left: max(2px, env(safe-area-inset-left, 0px));
   padding-right: max(2px, env(safe-area-inset-right, 0px));
   box-sizing: border-box;
+}
+
+/* Constrained width mode (default on desktop) */
+.tui-page.constrained {
+  max-width: 1000px;
+  margin: 0 auto;
+  border-left: 1px solid var(--tui-border);
+  border-right: 1px solid var(--tui-border);
+}
+
+/* Full width toggle button in title bar */
+.tui-width-toggle {
+  background: transparent;
+  border: 1px solid currentColor;
+  color: inherit;
+  padding: 0 0.5ch;
+  font-family: var(--tui-font);
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0.8;
+  margin-left: 1ch;
+}
+
+.tui-width-toggle:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Hide width toggle on mobile - always full width */
+@media (max-width: 600px) {
+  .tui-width-toggle {
+    display: none;
+  }
+  .tui-page.constrained {
+    max-width: none;
+    border-left: none;
+    border-right: none;
+  }
 }
 
 @supports (-webkit-touch-callout: none) {
@@ -222,43 +261,42 @@ body {
 .tui-info-bar {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5ch 0;
-  padding: 2px 1ch;
+  gap: 0.5em 2ch;
+  padding: 4px 1ch;
   background: var(--tui-bg-panel);
   border-top: 1px solid var(--tui-border);
   border-bottom: 1px solid var(--tui-border);
-  min-height: 1.4em;
+  min-height: 1.6em;
   align-items: center;
   flex-shrink: 0;
+  font-size: 12px;
 }
 
 .tui-info-item {
-  display: flex;
-  align-items: baseline;
+  display: inline-flex;
+  align-items: center;
   gap: 0.5ch;
   white-space: nowrap;
 }
 
-/* Add separator between info items */
-.tui-info-item:not(:last-child)::after {
-  content: "│";
-  margin-left: 1ch;
-  margin-right: 1ch;
-  color: var(--tui-border);
-}
-
 .tui-info-label {
   color: var(--tui-fg-dim);
-  font-weight: bold;
+  text-transform: lowercase;
+}
+
+.tui-info-label::after {
+  content: ":";
 }
 
 .tui-info-value {
-  color: var(--tui-fg-bright);
+  color: var(--tui-fg);
+  font-weight: 600;
   max-width: 20ch;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+/* Status badge styles */
 .tui-info-value.status-ready {
   color: var(--tui-success);
 }
@@ -272,9 +310,20 @@ body {
   color: var(--tui-error);
 }
 
+.tui-info-value.status-archived {
+  color: var(--tui-warning, #b45309);
+}
+
 @keyframes blink {
   50% {
     opacity: 0.5;
+  }
+}
+
+/* Respect user preference for reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .tui-info-value.status-working {
+    animation: none;
   }
 }
 
@@ -322,10 +371,15 @@ pl4n-editor {
 
 .editor-shell .editor-banner {
   background: var(--tui-highlight);
-  border: 1px solid var(--tui-accent);
+  border-top: 1px solid var(--tui-accent);
+  border-bottom: 1px solid var(--tui-accent);
+  border-left: none;
+  border-right: none;
   border-radius: 0;
   padding: 0.5em 1ch;
-  margin: 0 1ch 0.5em 1ch;
+  margin: 0;
+  width: 100%;
+  max-width: 100%;
   color: var(--tui-accent);
 }
 
@@ -436,7 +490,7 @@ pl4n-editor {
   font-family: var(--tui-font);
   font-size: 13px;
   padding: 4px 4px;
-  min-height: 32px; /* comfortable but not too tall */
+  min-height: 36px; /* standardized touch target */
   cursor: pointer;
   transition: background 0.1s;
 }
@@ -501,7 +555,7 @@ pl4n-editor {
   font-family: var(--tui-font);
   font-size: var(--tui-font-size);
   padding: 4px 4px;
-  min-height: 32px;
+  min-height: 36px; /* standardized touch target */
   cursor: pointer;
   transition: background 0.1s;
 }
@@ -674,6 +728,28 @@ pl4n-editor {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Agent status items with tooltips (on dark status bar background) */
+.agent-status-item {
+  cursor: help;
+  padding: 0 0.3ch;
+}
+
+.agent-status-item.agent-working {
+  color: #60a5fa; /* Bright blue for dark bg */
+}
+
+.agent-status-item.agent-done {
+  color: #4ade80; /* Bright green for dark bg */
+}
+
+.agent-status-item.agent-error {
+  color: #f87171; /* Bright red for dark bg */
+}
+
+.agent-status-item.agent-idle {
+  color: #a8a29e; /* Light gray for dark bg */
 }
 
 .tui-file-path {
@@ -1276,12 +1352,9 @@ pl4n-editor {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .undo-redo-float {
-  position: fixed;
-  top: 3em;
-  right: 2ch;
+  /* Stay in header-actions flow, don't use fixed positioning */
   display: flex;
-  gap: 1ch;
-  z-index: 50;
+  gap: 0.5ch;
 }
 
 .undo-redo-btn {

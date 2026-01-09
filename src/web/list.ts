@@ -449,9 +449,7 @@ class Pl4nList extends LitElement {
           (event) => html`
             <a
               class="tui-activity-item"
-              href=${
-                this.token ? `/projects/${event.project_id}/sessions?t=${this.token}` : "/projects"
-              }
+              href=${this.resolveActivityHref(event)}
             >
               <span class="tui-activity-dot ${event.action}"></span>
               <span>${formatActivity(event)}</span>
@@ -460,6 +458,16 @@ class Pl4nList extends LitElement {
         )}
       </div>
     `;
+  }
+
+  private resolveActivityHref(event: ActivityEvent): string {
+    if (this.projectData && event.project_id === this.projectData.project_id) {
+      const session = this.sessionsData.find((item) => item.session_id === event.session_id);
+      if (session?.edit_path) {
+        return session.edit_path;
+      }
+    }
+    return this.token ? `/projects/${event.project_id}/sessions?t=${this.token}` : "/projects";
   }
 }
 
