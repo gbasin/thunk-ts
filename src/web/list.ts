@@ -83,14 +83,14 @@ function parseFilterFromLocation(): ListFilter {
   const url = new URL(window.location.href);
   const value = url.searchParams.get("archived");
   if (!value) {
-    return "all";
+    return "active";
   }
   const normalized = value.toLowerCase();
-  if (normalized === "all") {
-    return "all";
-  }
   if (normalized === "active" || normalized === "0" || normalized === "false") {
     return "active";
+  }
+  if (normalized === "all") {
+    return "all";
   }
   if (
     normalized === "1" ||
@@ -108,7 +108,7 @@ function filterParam(filter: ListFilter): string | null {
     return "1";
   }
   if (filter === "active") {
-    return "active";
+    return null;
   }
   return "all";
 }
@@ -119,7 +119,7 @@ class Pl4nList extends LitElement {
   private eventSource: EventSource | null = null;
   private sessionsData: SessionItem[] = [];
   private projectData: ListPayload["project"] | null = null;
-  private filter: ListFilter = "all";
+  private filter: ListFilter = "active";
   private loading = false;
   private filterBound = false;
   private archiveBusy = new Set<string>();
@@ -188,7 +188,7 @@ class Pl4nList extends LitElement {
 
   private updateTuiChrome() {
     const project = this.project;
-    const sessions = this.visibleSessions;
+    const sessions = this.activeSessions;
     const projectName = project?.name ?? "--";
     const latest = formatRelativeTime(sessions[0]?.updated_at);
 

@@ -349,7 +349,7 @@ export function createHandlers(context: HandlerContext) {
       }
 
       const sessions = await project.manager.listSessions({
-        archived: parseArchivedFilter(req, "all"),
+        archived: parseArchivedFilter(req, "exclude"),
       });
       const items = [] as Record<string, unknown>[];
       for (const session of sessions) {

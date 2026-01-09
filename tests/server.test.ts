@@ -550,7 +550,7 @@ describe("handlers", () => {
         `/projects/${projectId}/edit/${review.sessionId}?t=${review.sessionToken ?? ""}`,
       );
       expect(approvedItem?.edit_path).toBeNull();
-      expect(archivedItem?.archived).toBe(true);
+      expect(archivedItem).toBeUndefined();
 
       await registry.stop();
       sse.close();
