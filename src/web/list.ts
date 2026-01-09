@@ -83,11 +83,14 @@ function parseFilterFromLocation(): ListFilter {
   const url = new URL(window.location.href);
   const value = url.searchParams.get("archived");
   if (!value) {
-    return "active";
+    return "all";
   }
   const normalized = value.toLowerCase();
   if (normalized === "all") {
     return "all";
+  }
+  if (normalized === "active" || normalized === "0" || normalized === "false") {
+    return "active";
   }
   if (
     normalized === "1" ||
@@ -104,10 +107,10 @@ function filterParam(filter: ListFilter): string | null {
   if (filter === "archived") {
     return "1";
   }
-  if (filter === "all") {
-    return "all";
+  if (filter === "active") {
+    return "active";
   }
-  return null;
+  return "all";
 }
 
 class Pl4nList extends LitElement {
@@ -116,7 +119,7 @@ class Pl4nList extends LitElement {
   private eventSource: EventSource | null = null;
   private sessionsData: SessionItem[] = [];
   private projectData: ListPayload["project"] | null = null;
-  private filter: ListFilter = "active";
+  private filter: ListFilter = "all";
   private loading = false;
   private filterBound = false;
   private archiveBusy = new Set<string>();
@@ -185,7 +188,7 @@ class Pl4nList extends LitElement {
 
   private updateTuiChrome() {
     const project = this.project;
-    const sessions = this.activeSessions;
+    const sessions = this.visibleSessions;
     const projectName = project?.name ?? "--";
     const latest = formatRelativeTime(sessions[0]?.updated_at);
 
@@ -247,37 +250,44 @@ class Pl4nList extends LitElement {
                   const canEdit = !!session.edit_path;
                   const updated = formatRelativeTime(session.updated_at);
                   const phaseLabel = formatPhase(session.phase);
+                  const phaseClass = session.phase.replace(/_/g, "-");
 
                   const cardContent = html`
-                  <div class="tui-card-header">
-                    <span class="tui-card-title">${session.session_id}</span>
-                    <span class="tui-card-actions">
-                      ${this.renderArchiveButton(session)}
-                      ${
-                        session.archived
-                          ? html`<span class="tui-card-badge archived">archived</span>`
-                          : null
-                      }
-                      <span class="tui-card-badge ${approved ? "approved" : ""}">
-                        ${phaseLabel}
+                    <div class="tui-card-header">
+                      <span class="tui-card-title">${session.session_id}</span>
+                      <span class="tui-card-actions">
+                        ${
+                          session.archived
+                            ? html`<span class="tui-card-badge archived">archived</span>`
+                            : null
+                        }
+                        <span
+                          class="tui-card-badge ${approved ? "approved" : `phase-${phaseClass}`}"
+                        >
+                          ${phaseLabel}
+                        </span>
                       </span>
-                    </span>
-                  </div>
-                  <div class="tui-card-task">${truncateTask(session.task)}</div>
-                  <div class="tui-card-meta">
-                    <span>Turn ${session.turn}</span>
-                    <span class="tui-card-dot"></span>
-                    <span>${updated}</span>
-                  </div>
-                `;
+                    </div>
+                    <div class="tui-card-task">${truncateTask(session.task)}</div>
+                    <div class="tui-card-meta">
+                      <span class="tui-card-meta-left">
+                        <span>Turn ${session.turn}</span>
+                        <span class="tui-card-dot"></span>
+                        <span>${updated}</span>
+                      </span>
+                      <span class="tui-card-meta-right">
+                        ${this.renderArchiveButton(session)}
+                      </span>
+                    </div>
+                  `;
 
                   return canEdit
                     ? html`<a class="tui-card ${session.archived ? "archived" : ""}" href=${session.edit_path}>
-                      ${cardContent}
-                    </a>`
+                        ${cardContent}
+                      </a>`
                     : html`<div class="tui-card ${session.archived ? "archived" : ""} disabled">
-                      ${cardContent}
-                    </div>`;
+                        ${cardContent}
+                      </div>`;
                 })
         }
       </div>
@@ -419,7 +429,7 @@ class Pl4nList extends LitElement {
     const busy = this.archiveBusy.has(session.session_id);
     return html`
       <button
-        class="tui-card-action"
+        class="button secondary"
         ?disabled=${busy}
         @click=${(event: Event) => this.toggleArchive(session, event)}
       >

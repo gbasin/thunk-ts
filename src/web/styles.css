@@ -139,8 +139,9 @@ body {
 }
 
 .tui-filter-btn.active {
-  border-color: var(--tui-accent);
-  color: var(--tui-accent);
+  border-color: var(--tui-fg);
+  background: var(--tui-fg);
+  color: var(--tui-bg);
 }
 
 .tui-filter-btn:hover {
@@ -215,31 +216,25 @@ body {
   color: var(--tui-warning);
 }
 
-.tui-card-action {
-  padding: 0 0.6ch;
-  border: 1px solid var(--tui-border);
-  background: var(--tui-bg);
-  color: var(--tui-fg);
-  font-size: 0.85em;
-  cursor: pointer;
-}
-
-.tui-card-action:hover {
-  background: var(--tui-highlight);
-}
-
-.tui-card-action:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
 .tui-card-meta {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.5ch;
   margin-top: 0.3em;
   color: var(--tui-fg-dim);
   font-size: 0.9em;
+}
+
+.tui-card-meta-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5ch;
+}
+
+.tui-card-meta-right {
+  display: inline-flex;
+  align-items: center;
 }
 
 .tui-card-dot {
@@ -275,6 +270,32 @@ body {
 .tui-card-badge.approved {
   border-color: var(--tui-success);
   color: var(--tui-success);
+}
+
+.tui-card-badge.phase-user-review {
+  border-color: var(--tui-accent);
+  color: var(--tui-accent);
+}
+
+.tui-card-badge.phase-peer-review {
+  border-color: var(--tui-warning);
+  color: var(--tui-warning);
+}
+
+.tui-card-badge.phase-synthesizing {
+  border-color: var(--tui-accent);
+  color: var(--tui-accent);
+}
+
+.tui-card-badge.phase-drafting,
+.tui-card-badge.phase-initializing {
+  border-color: var(--tui-border);
+  color: var(--tui-fg-dim);
+}
+
+.tui-card-badge.phase-error {
+  border-color: var(--tui-error);
+  color: var(--tui-error);
 }
 
 @media (max-width: 600px) {

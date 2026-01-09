@@ -73,11 +73,11 @@ function parseToken(req: Request): string | null {
   return url.searchParams.get("t");
 }
 
-function parseArchivedFilter(req: Request): ArchivedFilter {
+function parseArchivedFilter(req: Request, fallback: ArchivedFilter = "exclude"): ArchivedFilter {
   const url = new URL(req.url);
   const value = url.searchParams.get("archived");
   if (!value) {
-    return "exclude";
+    return fallback;
   }
   const normalized = value.toLowerCase();
   if (normalized === "all") {
@@ -348,7 +348,9 @@ export function createHandlers(context: HandlerContext) {
         return projectNotFound(projectId);
       }
 
-      const sessions = await project.manager.listSessions({ archived: parseArchivedFilter(req) });
+      const sessions = await project.manager.listSessions({
+        archived: parseArchivedFilter(req, "all"),
+      });
       const items = [] as Record<string, unknown>[];
       for (const session of sessions) {
         const canEdit = session.phase === Phase.UserReview;
