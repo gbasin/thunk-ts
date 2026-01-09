@@ -89,6 +89,7 @@ init → [user edits] → continue → [user edits] → ... → approve
 .pl4n/sessions/swift-river/       # Human-friendly session ID
 ├── meta.yaml           # Task, created_at
 ├── state.yaml          # turn, phase, agent_plan_ids
+├── input.md            # Original task input
 ├── bold-peak.md        # Agent's working plan (opaque name)
 ├── calm-forest.md      # Another agent's plan
 ├── turns/

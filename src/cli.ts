@@ -287,6 +287,14 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
       state.phase = Phase.Drafting;
       await manager.saveState(state);
 
+      const paths = manager.getPaths(state.sessionId);
+      try {
+        await fs.writeFile(paths.input, taskDescription, "utf8");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to write input file";
+        exitWithError({ error: `Cannot write session input file: ${message}` }, pretty);
+      }
+
       // Run first turn (blocking)
       const orchestrator = new deps.TurnOrchestrator(manager, config);
       const success = await orchestrator.runTurn(state.sessionId);
@@ -296,7 +304,6 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
         exitWithError({ error: "Session disappeared during turn" }, pretty);
       }
 
-      const paths = manager.getPaths(state.sessionId);
       const turnFile = paths.turnFile(updatedState.turn);
 
       if (success) {

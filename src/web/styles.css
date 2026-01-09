@@ -636,7 +636,28 @@ pl4n-list {
   max-height: 80vh;
   overflow: auto;
   box-shadow: none;
-  padding: 20px;
+  padding: 0;
+}
+
+.modal-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.modal-content {
+  padding: 16px 20px 20px;
 }
 
 .diff-line {
@@ -644,6 +665,16 @@ pl4n-list {
   font-size: 13px;
   padding: 2px 6px;
   white-space: pre-wrap;
+}
+
+.modal .diff-collapsed {
+  text-align: center;
+  color: var(--muted);
+  font-style: italic;
+  background: transparent;
+  border-top: 1px dashed var(--border);
+  border-bottom: 1px dashed var(--border);
+  padding: 4px 8px;
 }
 
 .diff-add {

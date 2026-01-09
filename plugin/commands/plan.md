@@ -35,7 +35,7 @@ Interview the user in depth using the AskUserQuestion tool to understand what th
 - Continue asking questions until you have a comprehensive understanding
 - Each round, ask 2-4 focused questions on different aspects
 
-When the interview is complete, write a comprehensive spec to `.pl4n/task-temp.md` summarizing everything discussed, then proceed to Step 3.
+When the interview is complete, write a comprehensive spec to a timestamped file under `.pl4n/inputs/` (create the directory if needed), e.g. `.pl4n/inputs/interview-YYYYMMDD-HHMMSS.md`, summarizing everything discussed, then proceed to Step 3.
 
 ### Option 2: Spec File
 
@@ -43,7 +43,7 @@ Ask for the file path, then proceed to Step 3 using that file directly with `--f
 
 ### Option 3: Paste Description
 
-Ask the user to paste their description. Once received, write it to `.pl4n/task-temp.md`, then proceed to Step 3.
+Ask the user to paste their description. Once received, write it to a timestamped file under `.pl4n/inputs/` (create the directory if needed), e.g. `.pl4n/inputs/paste-YYYYMMDD-HHMMSS.md`, then proceed to Step 3.
 
 ## Step 3: Initialize and Run
 
@@ -51,11 +51,12 @@ Prerequisites: If `pl4n` is not found (exit code 127), run `bun install` first.
 
 1. Run pl4n init (blocks until first turn is complete):
    - For spec file: `pl4n init --file "<filepath>"`
-   - For interview/paste: `pl4n init --file .pl4n/task-temp.md`
+   - For interview/paste: `pl4n init --file "<input-file>"`
 
 2. The command blocks while agents work. When complete, tell the user:
    - The `session_id` from the JSON output
    - The path to the plan file (`.pl4n/sessions/<id>/turns/001.md`)
+   - The original task input is saved as `.pl4n/sessions/<id>/input.md`
    - They should review and edit the file
    - When done editing, use `/pl4n:continue <session_id>` to start the next turn
    - Or `/pl4n:approve <session_id>` if satisfied

@@ -9,6 +9,7 @@ function formatPhase(phase: string): string {
 }
 
 type AgentStatusMap = Record<string, string>;
+type DiffDisplayLine = LineChange | { type: "collapsed"; count: number };
 
 function formatAgentStatus(agents: AgentStatusMap | undefined): string {
   if (!agents || Object.keys(agents).length === 0) {
@@ -646,13 +647,13 @@ Try editing this text to see the diff highlighting in action!`;
     return html`
       <div class="modal-backdrop" @click=${() => this.closeAutosaveDiff()}>
         <div class="modal" @click=${(event: Event) => event.stopPropagation()}>
-          <div class="header">
+          <div class="modal-header">
             <h2>Autosave Diff</h2>
             <button class="button secondary" @click=${() => this.closeAutosaveDiff()}>
               Close
             </button>
           </div>
-          ${this.renderDiffLines(diff)}
+          <div class="modal-content">${this.renderDiffLines(diff)}</div>
         </div>
       </div>
     `;
@@ -668,20 +669,27 @@ Try editing this text to see the diff highlighting in action!`;
     return html`
       <div class="modal-backdrop" @click=${() => this.closeChangesDiff()}>
         <div class="modal" @click=${(event: Event) => event.stopPropagation()}>
-          <div class="header">
+          <div class="modal-header">
             <h2>Changes</h2>
             <button class="button secondary" @click=${() => this.closeChangesDiff()}>
               Close
             </button>
           </div>
-          ${this.renderDiffLines(diff)}
+          <div class="modal-content">${this.renderDiffLines(diff)}</div>
         </div>
       </div>
     `;
   }
 
   private renderDiffLines(diff: LineChange[]) {
-    return diff.map((part) => {
+    const collapsed = this.collapseDiffLines(diff, 2);
+    if (collapsed.length === 0) {
+      return html`<div class="diff-no-changes">No changes</div>`;
+    }
+    return collapsed.map((part) => {
+      if (part.type === "collapsed") {
+        return html`<div class="diff-line diff-collapsed">··· ${part.count} unchanged lines ···</div>`;
+      }
       const cls =
         part.type === "add"
           ? "diff-line diff-add"
@@ -723,6 +731,62 @@ Try editing this text to see the diff highlighting in action!`;
       }
       return html`<div class=${cls}>${part.value}</div>`;
     });
+  }
+
+  private collapseDiffLines(diff: LineChange[], contextLines: number): DiffDisplayLine[] {
+    const hasChanges = diff.some((part) => part.type !== "context");
+    if (!hasChanges) {
+      return [];
+    }
+
+    const collapsed: DiffDisplayLine[] = [];
+
+    for (let i = 0; i < diff.length; i++) {
+      const part = diff[i];
+      if (part.type !== "context") {
+        collapsed.push(part);
+        continue;
+      }
+
+      const lines = part.value.split("\n");
+      if (lines[lines.length - 1] === "") {
+        lines.pop();
+      }
+
+      if (lines.length === 0) {
+        continue;
+      }
+
+      if (lines.length <= contextLines * 2 + 1) {
+        collapsed.push({ type: "context", value: lines.join("\n") });
+        continue;
+      }
+
+      const isFirst = i === 0;
+      const isLast = i === diff.length - 1;
+
+      if (!isFirst && contextLines > 0) {
+        collapsed.push({
+          type: "context",
+          value: lines.slice(0, contextLines).join("\n"),
+        });
+      }
+
+      const collapsedCount =
+        lines.length - (isFirst ? 0 : contextLines) - (isLast ? 0 : contextLines);
+      if (collapsedCount > 0) {
+        collapsed.push({ type: "collapsed", count: collapsedCount });
+      }
+
+      if (!isLast && contextLines > 0) {
+        collapsed.push({
+          type: "context",
+          value: lines.slice(-contextLines).join("\n"),
+        });
+      }
+    }
+
+    return collapsed;
   }
 
   private renderContinueConfirmPanel() {

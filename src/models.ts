@@ -461,6 +461,7 @@ export class SessionPaths {
   root: string;
   meta: string;
   state: string;
+  input: string;
   turns: string;
   agents: string;
   plans: string;
@@ -469,6 +470,7 @@ export class SessionPaths {
     this.root = root;
     this.meta = path.join(root, "meta.yaml");
     this.state = path.join(root, "state.yaml");
+    this.input = path.join(root, "input.md");
     this.turns = path.join(root, "turns");
     this.agents = path.join(root, "agents");
     this.plans = path.join(root, "plans");

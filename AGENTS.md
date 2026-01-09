@@ -87,6 +87,7 @@ src/
 .pl4n/sessions/swift-river/      # Human-friendly session ID
 ├── meta.yaml                     # Task description, timestamp
 ├── state.yaml                    # Turn, phase, agent_plan_ids mapping
+├── input.md                      # Original task input
 ├── plans/                        # Agent plan files
 │   ├── sunny-glade.md            # Agent's persistent plan (plan_id)
 │   └── amber-marsh.md            # Another agent's plan
