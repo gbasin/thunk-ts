@@ -82,6 +82,11 @@ describe("pl4n-editor", () => {
       setReadOnly: () => {},
     };
 
+    const archivedIndicator = document.createElement("span");
+    archivedIndicator.id = "info-archived";
+    archivedIndicator.textContent = "NO";
+    document.body.appendChild(archivedIndicator);
+
     originalFetch = (globalThis as unknown as Record<string, unknown>).fetch;
     (globalThis as unknown as Record<string, unknown>).fetch = (async () => {
       const payload = {
@@ -107,6 +112,7 @@ describe("pl4n-editor", () => {
     expect(element.archived).toBe(true);
     expect(element.readOnly).toBe(false);
     expect(element.statusMessage).toBe("Ready");
+    expect(archivedIndicator.textContent).toBe("YES");
   });
 
   it("toggles archive state via API", async () => {

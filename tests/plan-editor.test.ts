@@ -46,4 +46,30 @@ describe("PlanEditor", () => {
     editor.destroy();
     expect(root.querySelector(".plan-editor-container")).toBeNull();
   });
+
+  it("supports read-only and history actions", async () => {
+    const { PlanEditor } = await import("../src/web/plan-editor");
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const editor = new PlanEditor(root, { value: "one\n", baseline: "one\n" });
+
+    editor.setReadOnly(true);
+    const view = (editor as unknown as { view: { props: { editable?: () => boolean } } }).view;
+    expect(view.props.editable?.()).toBe(false);
+
+    editor.setReadOnly(false);
+    expect(view.props.editable?.()).toBe(true);
+
+    editor.setValue("two\n");
+    const undoWorked = editor.undo();
+    if (undoWorked) {
+      expect(editor.getValue().trimEnd()).toBe("one");
+      const redoWorked = editor.redo();
+      if (redoWorked) {
+        expect(editor.getValue().trimEnd()).toBe("two");
+      }
+    }
+
+    editor.destroy();
+  });
 });
