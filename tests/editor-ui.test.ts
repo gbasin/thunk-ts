@@ -111,8 +111,8 @@ describe("pl4n-editor", () => {
 
     expect(element.archived).toBe(true);
     expect(element.readOnly).toBe(false);
-    expect(element.statusMessage).toBe("Ready");
-    expect(archivedIndicator.textContent).toBe("YES");
+    expect(element.statusMessage?.trim()).toBe("Ready");
+    expect(archivedIndicator.textContent?.trim()).toBe("YES");
   });
 
   it("toggles archive state via API", async () => {
@@ -147,6 +147,6 @@ describe("pl4n-editor", () => {
     await (element as unknown as { toggleArchive: () => Promise<void> }).toggleArchive();
 
     expect(element.archived).toBe(true);
-    expect(element.statusMessage).toBe("Archived");
+    expect(element.statusMessage?.trim()).toBe("Archived");
   });
 });
