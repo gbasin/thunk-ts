@@ -1,5 +1,5 @@
 export const PLAN_FORMAT = `
-## Bacgkground and Context
+## Background and Context
 [Overview of the parts of the project relevant to the task and how they work, with bullets and references to code files as needed.]
 [Do not propose solutions here!]
 [This section ensures the agent has reviewed the project and the user can confirm their mutual understanding.]
@@ -182,39 +182,6 @@ If the user deleted something, it stays deleted even if agents still mention it.
   in Clarifications with your "My lean" — don't leave raw questions scattered in the plan
 `;
 
-const REFINE_PROMPT = `# Plan Refinement Task (Turn {turn})
-
-The user edited the plan. Interpret their changes and improve.
-
-## Task
-{task}
-
-## Current Plan
-Read the current synthesized plan from: \`{plan_file}\`
-
-This is your starting point - it represents the merged consensus from all agents.
-
-## User's Changes (Diff)
-\`\`\`diff
-{diff}
-\`\`\`
-
-## Instructions
-Interpret the user's edits:
-- **Deletions**: User doesn't want this. Remove or rethink.
-- **Additions**: User added text. This is a requirement or question.
-- **Questions in text**: User wants these answered. Address directly.
-- **Comments**: User feedback. Incorporate and remove marker.
-- **Unchanged sections**: User is satisfied. Keep unless you can improve.
-
-User's direct edits are REQUIREMENTS - incorporate them exactly.
-User's questions need your THINKING - address each thoroughly.
-
-Write your updated plan to: \`{output_file}\`
-
-{plan_format}
-`;
-
 function format(template: string, values: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ""));
 }
@@ -283,24 +250,6 @@ export function getSynthesisPrompt(params: {
     user_changes_section: userChangesSection,
     agent_plans: plansText,
     output_file: outputFile,
-    plan_format: PLAN_FORMAT,
-  });
-}
-
-export function getRefinePrompt(params: {
-  task: string;
-  turn: number;
-  planFile: string;
-  outputFile: string;
-  diff: string;
-}): string {
-  const { task, turn, planFile, outputFile, diff } = params;
-  return format(REFINE_PROMPT, {
-    task,
-    turn,
-    plan_file: planFile,
-    output_file: outputFile,
-    diff,
     plan_format: PLAN_FORMAT,
   });
 }

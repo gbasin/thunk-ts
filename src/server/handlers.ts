@@ -308,6 +308,15 @@ export function createHandlers(context: HandlerContext) {
           updated_at: latest,
         });
       }
+      // Sort by last activity (most recent first), then by name for projects with no activity
+      items.sort((a, b) => {
+        if (a.updated_at && b.updated_at) {
+          return b.updated_at.localeCompare(a.updated_at);
+        }
+        if (a.updated_at) return -1;
+        if (b.updated_at) return 1;
+        return a.name.localeCompare(b.name);
+      });
       const payload = escapeJsonForHtml({ projects: items });
       const html = templateReplace(template, {
         __PROJECTS_DATA__: payload,
@@ -334,6 +343,15 @@ export function createHandlers(context: HandlerContext) {
           updated_at: latest,
         });
       }
+      // Sort by last activity (most recent first), then by name for projects with no activity
+      payload.sort((a, b) => {
+        if (a.updated_at && b.updated_at) {
+          return b.updated_at.localeCompare(a.updated_at);
+        }
+        if (a.updated_at) return -1;
+        if (b.updated_at) return 1;
+        return a.name.localeCompare(b.name);
+      });
       return jsonResponse(200, { projects: payload });
     },
 

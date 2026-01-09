@@ -464,13 +464,57 @@ export function parseMarkdown(text: string): ReturnType<typeof schema.node> {
         continue;
       }
 
-      const heading = parseHeading(trimmed);
-      if (heading) {
+      // Handle headings - check first line separately since headings may not
+      // have a blank line after them
+      const lines = trimmed.split("\n");
+      const firstLineHeading = parseHeading(lines[0]);
+      if (firstLineHeading) {
         blocks.push({
           type: "heading",
-          content: heading.content,
-          level: heading.level,
+          content: firstLineHeading.content,
+          level: firstLineHeading.level,
         });
+        // If there's content after the heading, process it recursively
+        if (lines.length > 1) {
+          const rest = lines.slice(1).join("\n").trim();
+          if (rest) {
+            pushTextBlocks(rest);
+          }
+        }
+        continue;
+      }
+
+      // Handle paragraph followed by list (no blank line between)
+      // Find the first line that looks like a list item
+      let listStartIndex = -1;
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (/^[ \t]*[-*+]\s+.+$/.test(line) || /^[ \t]*\d+\.\s+.+$/.test(line)) {
+          listStartIndex = i;
+          break;
+        }
+      }
+
+      if (listStartIndex > 0) {
+        // We have text before the list - split into paragraph and list
+        const paragraphContent = lines.slice(0, listStartIndex).join("\n").trim();
+        const listContent = lines.slice(listStartIndex).join("\n");
+
+        if (paragraphContent) {
+          blocks.push({ type: "paragraph", content: paragraphContent });
+        }
+
+        const listParsed = parseList(listContent);
+        if (listParsed) {
+          blocks.push({
+            type: listParsed.type,
+            content: listContent,
+            list: listParsed,
+          });
+        } else {
+          // Fallback: treat remaining as paragraph
+          blocks.push({ type: "paragraph", content: listContent });
+        }
         continue;
       }
 

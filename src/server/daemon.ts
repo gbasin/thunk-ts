@@ -1,6 +1,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 
+import { fileExists } from "../utils/fs";
 import { findAvailablePort } from "./network";
 
 type SpawnOptions = {
@@ -35,15 +36,6 @@ type StartOptions = {
 };
 
 const DEFAULT_PORT = 3456;
-
-async function fileExists(filePath: string): Promise<boolean> {
-  try {
-    await fs.access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 async function resolveDaemonCommand(port: number, options: StartOptions): Promise<string[]> {
   if (options.entrypoint) {

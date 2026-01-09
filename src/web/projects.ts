@@ -126,16 +126,19 @@ class Pl4nProjects extends LitElement {
                 const link = this.token
                   ? `/projects/${project.project_id}/sessions?t=${this.token}`
                   : `/projects/${project.project_id}/sessions`;
+                const badgeClass = sessionCount === 0 ? "tui-card-badge empty" : "tui-card-badge";
                 return html`
                   <a class="tui-card" href=${link}>
                     <div class="tui-card-header">
                       <span class="tui-card-title">${project.name}</span>
-                      <span class="tui-card-badge">${sessionCount}</span>
+                      <span class=${badgeClass}>${sessionCount}</span>
                     </div>
                     <div class="tui-card-meta">
-                      <span>${sessionCount} ${sessionLabel}</span>
-                      <span class="tui-card-dot"></span>
-                      <span>${updated}</span>
+                      <span class="tui-card-meta-left">
+                        <span>${sessionCount} ${sessionLabel}</span>
+                        <span class="tui-card-dot"></span>
+                        <span>${updated}</span>
+                      </span>
                     </div>
                   </a>
                 `;

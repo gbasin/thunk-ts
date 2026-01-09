@@ -3,6 +3,7 @@ import path from "path";
 import sade from "sade";
 
 import { Phase, Pl4nConfig, type SessionState } from "./models";
+import { fileExists } from "./utils/fs";
 import { TurnOrchestrator } from "./orchestrator";
 import { SessionManager } from "./session";
 import { ensureGlobalToken } from "./server/auth";
@@ -97,15 +98,6 @@ function extractGlobalOptions(argv: string[]): {
   }
 
   return { argv: [argv[0], argv[1], ...cleaned], pl4nDir, pretty };
-}
-
-async function fileExists(filePath: string): Promise<boolean> {
-  try {
-    await fs.access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function exitWithError(data: Record<string, unknown>, pretty: boolean): never {
@@ -345,14 +337,21 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
     .action(async (opts: Record<string, unknown>) => {
       const manager = new SessionManager(resolvePl4nDir(opts, globalOptions.pl4nDir));
       const pretty = resolvePretty(opts, globalOptions.pretty);
-      const archivedOnly = Boolean(opts.archived ?? opts["archived"]);
-      const all = Boolean(opts.all ?? opts["all"]);
+      const archivedOnly = Boolean(opts.archived);
+      const all = Boolean(opts.all);
 
       if (archivedOnly && all) {
         exitWithError({ error: "Use either --archived or --all, not both" }, pretty);
       }
 
-      const archivedFilter = archivedOnly ? "only" : all ? "all" : "exclude";
+      let archivedFilter: "only" | "all" | "exclude";
+      if (archivedOnly) {
+        archivedFilter = "only";
+      } else if (all) {
+        archivedFilter = "all";
+      } else {
+        archivedFilter = "exclude";
+      }
       const sessions = await manager.listSessions({ archived: archivedFilter });
       outputJson(
         {
@@ -413,8 +412,8 @@ function buildProgram(argv = process.argv, depsOverrides?: Partial<CliDeps>) {
       const pretty = resolvePretty(opts, globalOptions.pretty);
       const mode = (action ?? "status").toLowerCase();
       const portOverride = resolveEnvPort();
-      const workspace = (opts.workspace as string | undefined) ?? (opts["workspace"] as string);
-      const bind = (opts.bind as string | undefined) ?? (opts["bind"] as string);
+      const workspace = opts.workspace as string | undefined;
+      const bind = opts.bind as string | undefined;
       const legacyPl4nDir = resolvePl4nDir(opts, globalOptions.pl4nDir);
       const serverConfig = await resolveServerConfig({
         workspace,

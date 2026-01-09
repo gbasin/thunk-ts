@@ -4,7 +4,6 @@ import {
   PLAN_FORMAT,
   getDraftPrompt,
   getPeerReviewPrompt,
-  getRefinePrompt,
   getSynthesisPrompt,
 } from "../src/prompts";
 
@@ -92,24 +91,6 @@ describe("getSynthesisPrompt", () => {
 
     expect(prompt).toContain("User's Changes From Previous Turn");
     expect(prompt).toContain("Redis");
-  });
-});
-
-describe("getRefinePrompt", () => {
-  it("includes diff and output file", () => {
-    const prompt = getRefinePrompt({
-      task: "Add caching layer",
-      turn: 3,
-      planFile: "/path/to/current.md",
-      outputFile: "/path/to/output.md",
-      diff: "- old line\n+ new line",
-    });
-
-    expect(prompt).toContain("Turn 3");
-    expect(prompt).toContain("/path/to/current.md");
-    expect(prompt).toContain("/path/to/output.md");
-    expect(prompt).toContain("- old line");
-    expect(prompt).toContain("+ new line");
   });
 });
 

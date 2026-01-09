@@ -4,45 +4,12 @@ import path from "path";
 
 import type { AgentConfig } from "../models";
 import { AgentAdapter, AgentHandle } from "./base";
-
-async function readThreadId(sessionFile?: string): Promise<string | null> {
-  if (!sessionFile) {
-    return null;
-  }
-  try {
-    const content = await fs.readFile(sessionFile, "utf8");
-    const trimmed = content.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  } catch {
-    return null;
-  }
-}
-
-function readThreadIdSync(sessionFile?: string): string | null {
-  if (!sessionFile) {
-    return null;
-  }
-  try {
-    const content = fsSync.readFileSync(sessionFile, "utf8");
-    const trimmed = content.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  } catch {
-    return null;
-  }
-}
-
-async function writeThreadId(
-  sessionFile: string | undefined,
-  threadId: string | null,
-): Promise<void> {
-  if (!sessionFile || !threadId) {
-    return;
-  }
-  await fs.mkdir(path.dirname(sessionFile), { recursive: true });
-  const tempFile = `${sessionFile}.tmp`;
-  await fs.writeFile(tempFile, threadId, "utf8");
-  await fs.rename(tempFile, sessionFile);
-}
+import {
+  readSessionId as readThreadId,
+  readSessionIdSync as readThreadIdSync,
+  writeSessionId as writeThreadId,
+} from "./session-file";
+import { streamToLog } from "./stream-utils";
 
 function resolveCodexConfigPath(params: {
   sessionFile?: string;
@@ -178,47 +145,6 @@ function shouldPreferOutput(config: AgentConfig): boolean {
     return false;
   }
   return codexConfig?.sandbox === "read-only";
-}
-
-async function streamToLog(params: {
-  stdout: ReadableStream<Uint8Array> | null;
-  stderr: ReadableStream<Uint8Array> | null;
-  logFile: string;
-  appendLog: boolean;
-}): Promise<{ stdoutText: string; stderrText: string }> {
-  const { stdout, stderr, logFile, appendLog } = params;
-  await fs.mkdir(path.dirname(logFile), { recursive: true });
-
-  if (appendLog) {
-    const header = `\n${"=".repeat(60)}\n=== New run ===\n${"=".repeat(60)}\n\n`;
-    await fs.appendFile(logFile, header, "utf8");
-  } else {
-    await fs.writeFile(logFile, "", "utf8");
-  }
-
-  const decoder = new TextDecoder();
-
-  const readStream = async (stream: ReadableStream<Uint8Array> | null): Promise<string> => {
-    if (!stream) {
-      return "";
-    }
-    const reader = stream.getReader();
-    let output = "";
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) {
-        break;
-      }
-      const chunk = decoder.decode(value);
-      output += chunk;
-      await fs.appendFile(logFile, chunk, "utf8");
-    }
-    return output;
-  };
-
-  const [stdoutText, stderrText] = await Promise.all([readStream(stdout), readStream(stderr)]);
-
-  return { stdoutText, stderrText };
 }
 
 export class CodexCLIAdapter extends AgentAdapter {

@@ -235,7 +235,7 @@ body {
   background: var(--tui-fg);
   color: var(--tui-bg);
   font-weight: bold;
-  z-index: 1;
+  z-index: 3;
   font-size: 0.85em;
   letter-spacing: 0.02em;
 }

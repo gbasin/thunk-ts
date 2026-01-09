@@ -9,11 +9,11 @@
  * - Full-screen diagram viewer with pinch-to-zoom
  */
 
-import { EditorState, Transaction, Plugin, PluginKey } from "prosemirror-state";
+import { EditorState, Transaction, Plugin, PluginKey, TextSelection } from "prosemirror-state";
 import { EditorView, Decoration, DecorationSet } from "prosemirror-view";
 import { keymap } from "prosemirror-keymap";
 import { baseKeymap, toggleMark } from "prosemirror-commands";
-import { history, undo, redo } from "prosemirror-history";
+import { history, undo, redo, undoDepth, redoDepth } from "prosemirror-history";
 import { inputRules, textblockTypeInputRule, wrappingInputRule } from "prosemirror-inputrules";
 import { splitListItem, liftListItem, sinkListItem } from "prosemirror-schema-list";
 import { Node } from "prosemirror-model";
@@ -349,6 +349,7 @@ type ActiveListItem = {
   pos: number;
   node: Node;
   list: Node;
+  listPos: number;
   index: number;
   paragraphPos: number;
 };
@@ -389,10 +390,12 @@ function getActiveListItem(state: EditorState): ActiveListItem | null {
     }
     const index = $from.index(listDepth);
     const listItemPos = $from.before(depth);
+    const listPos = $from.before(listDepth);
     return {
       pos: listItemPos,
       node,
       list,
+      listPos,
       index,
       paragraphPos: $from.before(),
     };
@@ -414,7 +417,14 @@ function updateHeadingLevel(
   const { schema } = state;
 
   if (nextLevel === null) {
-    view.dispatch(state.tr.setNodeMarkup(heading.pos, schema.nodes.paragraph));
+    // Convert heading to paragraph and ensure cursor is placed at the start
+    // of the new paragraph's content (not at position 0 which would cause
+    // joinBackward on next backspace)
+    const tr = state.tr.setNodeMarkup(heading.pos, schema.nodes.paragraph);
+    // Position cursor at start of paragraph content (heading.pos + 1)
+    const $pos = tr.doc.resolve(heading.pos + 1);
+    tr.setSelection(TextSelection.near($pos));
+    view.dispatch(tr);
     return true;
   }
 
@@ -456,6 +466,10 @@ function headingEditPlugin(): Plugin {
           return false;
         }
         const level = Number(heading.node.attrs.level || 1);
+        // At max level (6), don't intercept - let user type # as text
+        if (level >= 6) {
+          return false;
+        }
         return updateHeadingLevel(view, heading, level + text.length);
       },
       handleKeyDown(view, event) {
@@ -1206,9 +1220,10 @@ export class PlanEditor {
             })),
           ],
         }),
-        // listEditPlugin needs to be before baseKeymap to intercept Backspace/Delete
-        // before ProseMirror's default handling
+        // listEditPlugin and headingEditPlugin need to be before baseKeymap to intercept
+        // Backspace/Delete before ProseMirror's default handling (joinBackward)
         listEditPlugin(),
+        headingEditPlugin(),
         keymap({
           "Mod-b": toggleMark(schema.marks.strong),
           "Mod-i": toggleMark(schema.marks.em),
@@ -1223,7 +1238,6 @@ export class PlanEditor {
         keymap(baseKeymap),
         diffPlugin(),
         sectionFoldPlugin(),
-        headingEditPlugin(),
       ],
     });
 
@@ -1298,9 +1312,12 @@ export class PlanEditor {
   }
 
   /** Set content from markdown */
-  setValue(value: string): void {
+  setValue(value: string, options: { addToHistory?: boolean } = {}): void {
     const doc = parseMarkdown(value);
     const tr = this.view.state.tr.replaceWith(0, this.view.state.doc.content.size, doc.content);
+    if (options.addToHistory === false) {
+      tr.setMeta("addToHistory", false);
+    }
     this.view.dispatch(tr);
     this.scheduleLineNumberUpdate();
   }
@@ -1340,6 +1357,16 @@ export class PlanEditor {
   /** Redo last undone change */
   redo(): boolean {
     return redo(this.view.state, this.view.dispatch);
+  }
+
+  /** Check if there's anything to undo */
+  canUndo(): boolean {
+    return undoDepth(this.view.state) > 0;
+  }
+
+  /** Check if there's anything to redo */
+  canRedo(): boolean {
+    return redoDepth(this.view.state) > 0;
   }
 
   /** Destroy and clean up */

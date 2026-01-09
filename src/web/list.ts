@@ -442,10 +442,29 @@ class Pl4nList extends LitElement {
     if (this.activity.length === 0) {
       return null;
     }
+    // Filter activity based on current filter setting
+    const filteredActivity = this.activity.filter((event) => {
+      // Only filter for sessions in the current project that we know about
+      if (this.projectData && event.project_id === this.projectData.project_id) {
+        const session = this.sessionsData.find((item) => item.session_id === event.session_id);
+        if (session) {
+          if (this.filter === "active" && session.archived) {
+            return false;
+          }
+          if (this.filter === "archived" && !session.archived) {
+            return false;
+          }
+        }
+      }
+      return true;
+    });
+    if (filteredActivity.length === 0) {
+      return null;
+    }
     return html`
       <div class="tui-activity">
         <div class="tui-activity-title">Live activity</div>
-        ${this.activity.slice(0, 4).map(
+        ${filteredActivity.slice(0, 4).map(
           (event) => html`
             <a
               class="tui-activity-item"

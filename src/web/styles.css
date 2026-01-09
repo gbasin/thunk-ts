@@ -214,6 +214,10 @@ body {
   font-size: 0.9em;
 }
 
+.tui-card-badge.empty {
+  opacity: 0.5;
+}
+
 .tui-card-badge.archived {
   border-color: var(--tui-warning);
   color: var(--tui-warning);
@@ -232,7 +236,7 @@ body {
 .tui-card-meta-left {
   display: inline-flex;
   align-items: center;
-  gap: 0.5ch;
+  gap: 1.5ch;
 }
 
 .tui-card-meta-right {
@@ -241,9 +245,22 @@ body {
 }
 
 .tui-card-dot {
-  width: 3px;
-  height: 3px;
-  background: var(--tui-border);
+  display: none;
+}
+
+@media (max-width: 600px) {
+  .tui-card-meta-left {
+    gap: 0.5ch;
+  }
+
+  .tui-card-dot {
+    display: block;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: var(--tui-border);
+    flex-shrink: 0;
+  }
 }
 
 .tui-card-task {
@@ -1036,6 +1053,17 @@ pl4n-list {
   word-wrap: break-word;
 }
 
+/* Ensure empty paragraphs remain visible and clickable */
+.plan-editor p:empty::before {
+  content: "\200B"; /* zero-width space */
+  display: inline;
+}
+
+.plan-editor p:empty,
+.plan-editor p:has(> br:only-child) {
+  min-height: 1.6em;
+}
+
 .plan-editor h1,
 .plan-editor h2,
 .plan-editor h3,
@@ -1215,23 +1243,17 @@ pl4n-list {
 .diff-added {
   background: var(--diff-added-char, rgba(80, 200, 80, 0.35));
   border-radius: 2px;
-  position: relative;
-  z-index: 1;
 }
 
 .diff-removed {
-  display: inline-block;
-  width: 0;
-  overflow: visible;
+  display: inline;
   white-space: pre;
   pointer-events: none;
   background: rgba(220, 80, 80, 0.1);
-  color: rgba(220, 80, 80, 0.4);
+  color: rgba(220, 80, 80, 0.5);
   text-decoration: line-through;
   text-decoration-thickness: 1px;
   border-radius: 2px;
-  position: relative;
-  z-index: 0;
 }
 
 /* Multi-line removed content - displays as stacked lines instead of inline overflow */

@@ -3,19 +3,13 @@ import path from "path";
 import { createTwoFilesPatch } from "diff";
 
 import type { AgentAdapter } from "./adapters/base";
+import { fileExists } from "./utils/fs";
 import { ClaudeCodeSyncAdapter } from "./adapters/claude";
 import { CodexCLISyncAdapter } from "./adapters/codex";
 import { AgentStatus, Phase, Pl4nConfig } from "./models";
 import { generateUniqueName } from "./names";
 import { getDraftPrompt, getPeerReviewPrompt, getSynthesisPrompt } from "./prompts";
 import { SessionManager } from "./session";
-
-function fileExists(filePath: string): Promise<boolean> {
-  return fs
-    .access(filePath)
-    .then(() => true)
-    .catch(() => false);
-}
 
 function extractErrorSummary(output: string): string {
   // Look for common error patterns and extract a concise summary

@@ -1,4 +1,4 @@
-import { LitElement, html, svg } from "lit";
+import { LitElement, html } from "lit";
 import * as Diff from "diff";
 import { PlanEditor } from "./plan-editor.js";
 import { buildLineDiff, type LineChange } from "./diff-render.js";
@@ -82,6 +82,8 @@ class Pl4nEditor extends LitElement {
   private editor: PlanEditor | null = null;
   private mtime = 0;
   private dirty = false;
+  private canUndo = false;
+  private canRedo = false;
   private suppressChange = false;
   private saving = false;
   private continuing = false;
@@ -151,9 +153,13 @@ class Pl4nEditor extends LitElement {
         if (this.suppressChange) {
           return;
         }
-        this.dirty = true;
-        this.statusMessage = "Unsaved changes";
-        this.scheduleAutosave();
+        const currentContent = this.editor?.getValue() ?? "";
+        this.dirty = currentContent !== this.lastLoadedContent;
+        this.statusMessage = this.dirty ? "Unsaved changes" : "Ready";
+        this.updateUndoRedoState();
+        if (this.dirty) {
+          this.scheduleAutosave();
+        }
         this.requestUpdate();
       },
     });
@@ -332,8 +338,9 @@ class Pl4nEditor extends LitElement {
 
       if (this.editor) {
         this.suppressChange = true;
-        this.editor.setValue(normalizedContent);
+        // Set baseline BEFORE setValue so TableNodeView has correct baseline during render
         this.editor.setBaseline(normalizedContent);
+        this.editor.setValue(normalizedContent, { addToHistory: false });
         this.editor.setReadOnly(data.readOnly);
         this.suppressChange = false;
       }
@@ -400,8 +407,9 @@ Try editing this text to see the diff highlighting in action!`;
 
     if (this.editor) {
       this.suppressChange = true;
-      this.editor.setValue(normalizedContent);
+      // Set baseline BEFORE setValue so TableNodeView has correct baseline during render
       this.editor.setBaseline(normalizedContent);
+      this.editor.setValue(normalizedContent, { addToHistory: false });
       this.editor.setReadOnly(this.readOnly);
       this.suppressChange = false;
     }
@@ -542,6 +550,14 @@ Try editing this text to see the diff highlighting in action!`;
         this.requestUpdate();
         return;
       }
+      // Clear dirty state since content was successfully saved
+      this.dirty = false;
+      this.showAutosaveBanner = false;
+      this.autosaveContent = null;
+      if (this.autosaveTimer !== null) {
+        window.clearTimeout(this.autosaveTimer);
+        this.autosaveTimer = null;
+      }
       this.pollStatus();
     } catch {
       this.statusMessage = "Continue failed";
@@ -661,12 +677,23 @@ Try editing this text to see the diff highlighting in action!`;
     }, 2500);
   }
 
+  private updateUndoRedoState() {
+    if (this.editor) {
+      this.canUndo = this.editor.canUndo();
+      this.canRedo = this.editor.canRedo();
+    }
+  }
+
   private undo() {
     this.editor?.undo();
+    this.updateUndoRedoState();
+    this.requestUpdate();
   }
 
   private redo() {
     this.editor?.redo();
+    this.updateUndoRedoState();
+    this.requestUpdate();
   }
 
   private openAutosaveDiff() {
@@ -1073,13 +1100,13 @@ Try editing this text to see the diff highlighting in action!`;
                       ${this.renderUndoRedoButtons()}
                       <button
                         class="button secondary"
-                        ?disabled=${!hasChanges}
+                        ?disabled=${!hasChanges || this.continuing}
                         title=${hasChanges ? "Show changes" : "No changes to show"}
                         @click=${() => this.showDiff()}
                       >
                         Show Diff
                       </button>
-                      <button class="button" ?disabled=${this.saving} @click=${() => this.save()}>
+                      <button class="button" ?disabled=${this.saving || !this.dirty || this.continuing} @click=${() => this.save()}>
                         Save
                       </button>
                       <button
@@ -1105,6 +1132,7 @@ Try editing this text to see the diff highlighting in action!`;
     return html`
       <button
         class="button secondary"
+        ?disabled=${!this.canUndo || this.continuing}
         @click=${() => this.undo()}
         title="Undo (Cmd+Z)"
         aria-label="Undo"
@@ -1113,6 +1141,7 @@ Try editing this text to see the diff highlighting in action!`;
       </button>
       <button
         class="button secondary"
+        ?disabled=${!this.canRedo || this.continuing}
         @click=${() => this.redo()}
         title="Redo (Cmd+Shift+Z)"
         aria-label="Redo"
@@ -1136,22 +1165,6 @@ Try editing this text to see the diff highlighting in action!`;
       <button class="button secondary" ?disabled=${this.archiving} @click=${() => this.toggleArchive()}>
         ${this.archiving ? "..." : this.archived ? "Unarchive" : "Archive"}
       </button>
-    `;
-  }
-
-  private renderUndoIcon() {
-    return svg`
-      <svg class="undo-redo-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-        <path d="M9 5L5 9m0 0l4 4M5 9h7a4 4 0 0 1 0 8h-1" />
-      </svg>
-    `;
-  }
-
-  private renderRedoIcon() {
-    return svg`
-      <svg class="undo-redo-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-        <path d="M11 5l4 4m0 0l-4 4m4-4H8a4 4 0 0 0 0 8h1" />
-      </svg>
     `;
   }
 

@@ -6,6 +6,7 @@ import chokidar, { type FSWatcher } from "chokidar";
 import { load as loadYaml } from "js-yaml";
 
 import { Phase } from "../models";
+import { isRecord } from "../utils/types";
 import { SessionManager } from "../session";
 import { createProjectId } from "./project-id";
 
@@ -41,10 +42,6 @@ type SessionStateSummary = {
 
 const DEFAULT_IGNORES = [".git", "node_modules", "dist", "build", "coverage", "vendor"];
 const MAX_ACTIVITY = 50;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function actionForPhase(phase: string): ActivityEvent["action"] | null {
   if (phase === Phase.UserReview) {
