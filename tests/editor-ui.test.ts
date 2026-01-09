@@ -507,6 +507,186 @@ describe("pl4n-editor", () => {
     expect(panel?.strings.join("")).toContain("Review changes");
   });
 
+  it("polls status and reports working phase", async () => {
+    const EditorClass = customElements.get("pl4n-editor") as {
+      new (): HTMLElement;
+    };
+    const element = new EditorClass() as HTMLElement & {
+      projectId: string;
+      session: string;
+      token: string;
+      pollStatus?: () => void;
+      statusMessage?: string;
+    };
+
+    element.projectId = "p-status";
+    element.session = "s-status";
+    element.token = "t-status";
+
+    originalFetch = (globalThis as unknown as Record<string, unknown>).fetch;
+    (globalThis as unknown as Record<string, unknown>).fetch = (async () => {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ turn: 1, phase: "drafting" }),
+      } as FetchResponse;
+    }) as unknown as typeof fetch;
+
+    const originalSetInterval = window.setInterval;
+    let intervalCalls = 0;
+    let pending: Promise<unknown> | null = null;
+    window.setInterval = ((handler: () => void) => {
+      intervalCalls += 1;
+      pending = Promise.resolve(handler());
+      return 1;
+    }) as unknown as typeof window.setInterval;
+
+    try {
+      (element as unknown as { pollStatus: () => void }).pollStatus();
+      (element as unknown as { pollStatus: () => void }).pollStatus();
+      await pending;
+    } finally {
+      window.setInterval = originalSetInterval;
+    }
+
+    expect(intervalCalls).toBe(1);
+    expect(element.statusMessage?.trim()).toBe("Working (drafting)");
+  });
+
+  it("polls status and refreshes on new turn", async () => {
+    const EditorClass = customElements.get("pl4n-editor") as {
+      new (): HTMLElement;
+    };
+    const element = new EditorClass() as HTMLElement & {
+      projectId: string;
+      session: string;
+      token: string;
+      turn: number;
+      phase: string;
+      continuing?: boolean;
+      pollStatus?: () => void;
+      statusMessage?: string;
+      loadContent?: () => Promise<void>;
+    };
+
+    element.projectId = "p-status";
+    element.session = "s-status";
+    element.token = "t-status";
+    element.turn = 1;
+    element.phase = "drafting";
+    element.continuing = true;
+
+    let loadCalled = false;
+    element.loadContent = async () => {
+      loadCalled = true;
+    };
+
+    originalFetch = (globalThis as unknown as Record<string, unknown>).fetch;
+    (globalThis as unknown as Record<string, unknown>).fetch = (async () => {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ turn: 2, phase: "user_review" }),
+      } as FetchResponse;
+    }) as unknown as typeof fetch;
+
+    const originalSetInterval = window.setInterval;
+    const originalClearInterval = window.clearInterval;
+    let cleared = false;
+    let pending: Promise<unknown> | null = null;
+    window.setInterval = ((handler: () => void) => {
+      pending = Promise.resolve(handler());
+      return 2;
+    }) as unknown as typeof window.setInterval;
+    window.clearInterval = ((id: number) => {
+      if (id === 2) {
+        cleared = true;
+      }
+    }) as unknown as typeof window.clearInterval;
+
+    try {
+      (element as unknown as { pollStatus: () => Promise<void> }).pollStatus();
+      await pending;
+    } finally {
+      window.setInterval = originalSetInterval;
+      window.clearInterval = originalClearInterval;
+    }
+
+    expect(cleared).toBe(true);
+    expect(element.turn).toBe(2);
+    expect(element.phase).toBe("user_review");
+    expect(element.continuing).toBe(false);
+    expect(element.statusMessage?.trim()).toBe("New turn ready");
+    expect(loadCalled).toBe(true);
+  });
+
+  it("reports autosave failures", async () => {
+    const EditorClass = customElements.get("pl4n-editor") as {
+      new (): HTMLElement;
+    };
+    const element = new EditorClass() as HTMLElement & {
+      projectId: string;
+      session: string;
+      token: string;
+      readOnly?: boolean;
+      editor?: { getValue: () => string };
+      saveAutosave?: () => Promise<void>;
+      statusMessage?: string;
+    };
+
+    element.projectId = "p-auto";
+    element.session = "s-auto";
+    element.token = "t-auto";
+    element.readOnly = false;
+    element.editor = { getValue: () => "draft" };
+
+    originalFetch = (globalThis as unknown as Record<string, unknown>).fetch;
+    (globalThis as unknown as Record<string, unknown>).fetch = (async () => {
+      return {
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      } as FetchResponse;
+    }) as unknown as typeof fetch;
+
+    await (element as unknown as { saveAutosave: () => Promise<void> }).saveAutosave();
+
+    expect(element.statusMessage?.trim()).toBe("Autosave failed");
+  });
+
+  it("keeps autosave banner on discard failure", async () => {
+    const EditorClass = customElements.get("pl4n-editor") as {
+      new (): HTMLElement;
+    };
+    const element = new EditorClass() as HTMLElement & {
+      projectId: string;
+      session: string;
+      token: string;
+      showAutosaveBanner?: boolean;
+      discardAutosave?: (options?: { clearSnapshot?: boolean }) => Promise<void>;
+      statusMessage?: string;
+    };
+
+    element.projectId = "p-auto";
+    element.session = "s-auto";
+    element.token = "t-auto";
+    element.showAutosaveBanner = true;
+
+    originalFetch = (globalThis as unknown as Record<string, unknown>).fetch;
+    (globalThis as unknown as Record<string, unknown>).fetch = (async () => {
+      return {
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      } as FetchResponse;
+    }) as unknown as typeof fetch;
+
+    await (element as unknown as { discardAutosave: () => Promise<void> }).discardAutosave();
+
+    expect(element.statusMessage?.trim()).toBe("Autosave discard failed");
+    expect(element.showAutosaveBanner).toBe(true);
+  });
+
   it("toggles archive state via API", async () => {
     const EditorClass = customElements.get("pl4n-editor") as {
       new (): HTMLElement;

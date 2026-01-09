@@ -144,4 +144,64 @@ describe("PlanEditor", () => {
     editor.destroy();
     root.remove();
   });
+
+  it("keeps a single table row when delete is clicked", async () => {
+    const { PlanEditor } = await import("../src/web/plan-editor");
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const content = ["| A | B |", "| --- | --- |", "| 1 | 2 |", ""].join("\n");
+    const editor = new PlanEditor(root, { value: content, baseline: content });
+
+    const table = root.querySelector(".table-widget table") as HTMLTableElement | null;
+    const initialRows = table?.querySelectorAll("tbody tr").length ?? 0;
+    const deleteBtn = root.querySelector(
+      ".table-row-actions .table-delete-btn",
+    ) as HTMLButtonElement | null;
+    deleteBtn?.click();
+    const afterRows = table?.querySelectorAll("tbody tr").length ?? 0;
+    expect(afterRows).toBe(initialRows);
+
+    editor.destroy();
+    root.remove();
+  });
+
+  it("updates table cell content on blur", async () => {
+    const { PlanEditor } = await import("../src/web/plan-editor");
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const content = ["| A | B |", "| --- | --- |", "| 1 | 2 |", ""].join("\n");
+    const editor = new PlanEditor(root, { value: content, baseline: content });
+
+    const firstCell = root.querySelector("tbody td[contenteditable]") as HTMLElement | null;
+    expect(firstCell).not.toBeNull();
+    if (firstCell) {
+      firstCell.textContent = "9";
+      firstCell.dispatchEvent(new Event("blur"));
+    }
+
+    expect(editor.getValue()).toContain("| 9 | 2 |");
+
+    editor.destroy();
+    root.remove();
+  });
+
+  it("zooms diagram viewer with buttons", async () => {
+    const { PlanEditor } = await import("../src/web/plan-editor");
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const content = "```\n┌─┐\n└─┘\n```\n";
+    const editor = new PlanEditor(root, { value: content, baseline: content });
+
+    const expandBtn = root.querySelector(".diagram-expand-btn") as HTMLButtonElement | null;
+    expandBtn?.click();
+
+    const zoomLabel = document.querySelector(".diagram-viewer-zoom-label") as HTMLElement | null;
+    const zoomButtons = document.querySelectorAll(".diagram-viewer-zoom button");
+    const zoomIn = zoomButtons[zoomButtons.length - 1] as HTMLButtonElement | undefined;
+    zoomIn?.click();
+    expect(zoomLabel?.textContent).toBe("125%");
+
+    editor.destroy();
+    root.remove();
+  });
 });
