@@ -78,6 +78,7 @@ describe("SessionPaths", () => {
     expect(paths.root).toBe(root);
     expect(paths.meta).toBe(path.join(root, "meta.yaml"));
     expect(paths.state).toBe(path.join(root, "state.yaml"));
+    expect(paths.input).toBe(path.join(root, "input.md"));
     expect(paths.turns).toBe(path.join(root, "turns"));
     expect(paths.agents).toBe(path.join(root, "agents"));
 

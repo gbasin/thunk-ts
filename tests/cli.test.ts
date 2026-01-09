@@ -932,6 +932,10 @@ A: Yes, use --file - for stdin
       const state = await manager.loadSession(data.session_id);
       expect(state?.task).toContain("Feature Request");
       expect(state?.task).toContain("Q&A");
+
+      const paths = manager.getPaths(data.session_id);
+      const input = await fs.readFile(paths.input, "utf8");
+      expect(input).toBe(longTask.trim());
     });
   });
 
