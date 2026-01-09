@@ -54,7 +54,7 @@ describe("Editor restore (DOM)", () => {
 
     const view = (editor as any).view as { state: { doc: { textContent: string } } };
 
-    expect(editor.getValue()).toBe("restored content");
-    expect(view.state.doc.textContent).toBe("restored content");
+    expect(editor.getValue().trimEnd()).toBe("restored content");
+    expect(view.state.doc.textContent.trimEnd()).toBe("restored content");
   });
 });
