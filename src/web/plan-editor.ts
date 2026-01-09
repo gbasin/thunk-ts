@@ -405,6 +405,7 @@ class TableNodeView {
   private getPos: () => number | undefined;
   private tableEl: HTMLTableElement;
   private getBaseline: () => { headers: string[]; rows: string[][] } | null;
+  private separatorLine: string | null;
 
   constructor(
     node: Node,
@@ -417,6 +418,7 @@ class TableNodeView {
     this.getBaseline = getBaseline;
     this.headers = [...(node.attrs.headers as string[])];
     this.rows = (node.attrs.rows as string[][]).map((r) => [...r]);
+    this.separatorLine = (node.attrs.separator as string | null) ?? null;
 
     this.dom = document.createElement("div");
     this.dom.className = "table-widget";
@@ -698,6 +700,7 @@ class TableNodeView {
     const tr = this.view.state.tr.setNodeMarkup(pos, undefined, {
       headers: this.headers,
       rows: this.rows,
+      separator: this.separatorLine,
     });
     this.view.dispatch(tr);
   }
@@ -718,6 +721,7 @@ class TableNodeView {
     // Check if data actually changed (avoid re-render loops)
     const newHeaders = node.attrs.headers as string[];
     const newRows = node.attrs.rows as string[][];
+    const newSeparatorLine = (node.attrs.separator as string | null) ?? null;
 
     const headersMatch =
       newHeaders.length === this.headers.length &&
@@ -729,6 +733,10 @@ class TableNodeView {
         (row, i) =>
           row.length === this.rows[i].length && row.every((cell, j) => cell === this.rows[i][j]),
       );
+
+    if (newSeparatorLine !== this.separatorLine) {
+      this.separatorLine = newSeparatorLine;
+    }
 
     if (!headersMatch || !rowsMatch) {
       this.headers = [...newHeaders];

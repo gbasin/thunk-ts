@@ -34,28 +34,54 @@ export function isTable(content: string): boolean {
 /**
  * Parse a GFM pipe table into headers and rows
  */
-export function parseGFMTable(content: string): { headers: string[]; rows: string[][] } {
+export function parseGFMTable(content: string): {
+  headers: string[];
+  rows: string[][];
+  separatorLine: string | null;
+} {
   const lines = content.trim().split("\n");
   const headers = lines[0]
     .split("|")
     .slice(1, -1)
     .map((s) => s.trim());
-  // Skip separator line (lines[1])
+  const separatorLine = lines[1] ?? null;
   const rows = lines.slice(2).map((line) =>
     line
       .split("|")
       .slice(1, -1)
       .map((s) => s.trim()),
   );
-  return { headers, rows };
+  return { headers, rows, separatorLine };
 }
 
 /**
  * Serialize headers and rows back to GFM pipe table format
  */
-export function serializeGFMTable(headers: string[], rows: string[][]): string {
+function countSeparatorColumns(separatorLine: string): number {
+  const trimmed = separatorLine.trim();
+  if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) {
+    return 0;
+  }
+  return trimmed.split("|").slice(1, -1).length;
+}
+
+function resolveSeparatorLine(headers: string[], separatorLine: string | null | undefined): string {
+  if (separatorLine) {
+    const normalized = separatorLine.trim();
+    if (countSeparatorColumns(normalized) === headers.length) {
+      return separatorLine;
+    }
+  }
+  return "| " + headers.map(() => "---").join(" | ") + " |";
+}
+
+export function serializeGFMTable(
+  headers: string[],
+  rows: string[][],
+  separatorLine?: string | null,
+): string {
   const headerLine = "| " + headers.join(" | ") + " |";
-  const separator = "| " + headers.map(() => "---").join(" | ") + " |";
+  const separator = resolveSeparatorLine(headers, separatorLine);
   const dataLines = rows.map((row) => "| " + row.join(" | ") + " |");
   return [headerLine, separator, ...dataLines].join("\n");
 }
@@ -198,6 +224,7 @@ const nodes: Record<string, NodeSpec> = {
     attrs: {
       headers: { default: [] as string[] },
       rows: { default: [] as string[][] },
+      separator: { default: null as string | null },
     },
     atom: true, // Single unit for selection
     toDOM() {
@@ -233,6 +260,19 @@ const marks: Record<string, MarkSpec> = {
 
 export const schema = new Schema({ nodes, marks });
 
+type ParsedListType = "bullet_list" | "ordered_list";
+
+interface ParsedListItem {
+  content: string;
+  children: ParsedList[];
+}
+
+interface ParsedList {
+  type: ParsedListType;
+  order?: number;
+  items: ParsedListItem[];
+}
+
 /**
  * Parse markdown text into a ProseMirror document
  */
@@ -256,52 +296,130 @@ export function parseMarkdown(text: string): ReturnType<typeof schema.node> {
     return nodes.length > 0 ? nodes : null;
   };
   const parseHeading = (value: string) => {
-    const match = value.match(/^(#{1,6})\s+(.*)$/);
+    const match = value.match(/^\s{0,3}(#{1,6})\s+(.*)$/);
     if (!match) return null;
     return { level: match[1].length, content: match[2] ?? "" };
   };
-  const parseList = (value: string) => {
+  const parseList = (value: string): ParsedList | null => {
     const lines = value.split("\n");
     if (lines.some((line) => line.trim() === "")) {
       return null;
     }
 
-    const bulletItems: string[] = [];
-    const orderedItems: Array<{ order: number; content: string }> = [];
-
-    let allBullet = true;
-    let allOrdered = true;
+    const parsedLines: Array<{
+      indent: number;
+      type: ParsedListType;
+      order?: number;
+      content: string;
+    }> = [];
 
     for (const line of lines) {
-      const bulletMatch = line.match(/^\s*[-*+]\s+(.+)$/);
-      const orderedMatch = line.match(/^\s*(\d+)\.\s+(.+)$/);
-
-      if (bulletMatch) {
-        bulletItems.push(bulletMatch[1]);
-      } else {
-        allBullet = false;
-      }
+      const orderedMatch = line.match(/^([ \t]*)(\d+)\.\s+(.+)$/);
+      const bulletMatch = line.match(/^([ \t]*)([-*+])\s+(.+)$/);
 
       if (orderedMatch) {
-        orderedItems.push({ order: Number(orderedMatch[1]), content: orderedMatch[2] });
-      } else {
-        allOrdered = false;
+        const indent = orderedMatch[1].replace(/\t/g, "  ").length;
+        parsedLines.push({
+          indent,
+          type: "ordered_list",
+          order: Number(orderedMatch[2]),
+          content: orderedMatch[3],
+        });
+        continue;
       }
+
+      if (bulletMatch) {
+        const indent = bulletMatch[1].replace(/\t/g, "  ").length;
+        parsedLines.push({
+          indent,
+          type: "bullet_list",
+          content: bulletMatch[3],
+        });
+        continue;
+      }
+
+      return null;
     }
 
-    if (allOrdered && orderedItems.length > 0) {
-      return {
-        type: "ordered_list" as const,
-        order: orderedItems[0].order || 1,
-        items: orderedItems.map((item) => item.content),
+    if (parsedLines.length === 0) {
+      return null;
+    }
+
+    const minIndent = Math.min(...parsedLines.map((line) => line.indent));
+    const normalizedLines = parsedLines.map((line) => {
+      const effectiveIndent = line.indent - minIndent;
+      if (effectiveIndent < 0 || effectiveIndent % 2 !== 0) {
+        return null;
+      }
+      return { ...line, level: effectiveIndent / 2 };
+    });
+
+    if (normalizedLines.some((line) => line === null)) {
+      return null;
+    }
+
+    const stack: ParsedList[] = [];
+    const lastItems: ParsedListItem[] = [];
+
+    const createList = (line: NonNullable<(typeof normalizedLines)[number]>) => {
+      const list: ParsedList = {
+        type: line.type,
+        items: [],
       };
+      if (line.type === "ordered_list") {
+        list.order = line.order ?? 1;
+      }
+      return list;
+    };
+
+    let listRoot: ParsedList | null = null;
+
+    for (const rawLine of normalizedLines) {
+      if (!rawLine) {
+        return null;
+      }
+      const line = rawLine;
+
+      while (stack.length > line.level + 1) {
+        stack.pop();
+        lastItems.pop();
+      }
+
+      if (line.level > stack.length) {
+        return null;
+      }
+
+      if (line.level === stack.length) {
+        if (line.level === 0) {
+          const list = createList(line);
+          listRoot = list;
+          stack.push(list);
+        } else {
+          const parentItem = lastItems[line.level - 1];
+          if (!parentItem) {
+            return null;
+          }
+          const list = createList(line);
+          parentItem.children.push(list);
+          stack.push(list);
+        }
+      }
+
+      const currentList = stack[line.level];
+      if (!currentList || currentList.type !== line.type) {
+        return null;
+      }
+      if (currentList.type === "ordered_list" && currentList.order === undefined) {
+        currentList.order = line.order ?? 1;
+      }
+
+      const item: ParsedListItem = { content: line.content, children: [] };
+      currentList.items.push(item);
+      lastItems[line.level] = item;
+      lastItems.length = line.level + 1;
     }
 
-    if (allBullet && bulletItems.length > 0) {
-      return { type: "bullet_list" as const, items: bulletItems };
-    }
-
-    return null;
+    return listRoot;
   };
   const blocks: Array<{
     type:
@@ -316,9 +434,9 @@ export function parseMarkdown(text: string): ReturnType<typeof schema.node> {
     language?: string;
     headers?: string[];
     rows?: string[][];
+    separatorLine?: string | null;
     level?: number;
-    items?: string[];
-    order?: number;
+    list?: ParsedList;
   }> = [];
 
   const pushTextBlocks = (chunk: string) => {
@@ -328,20 +446,20 @@ export function parseMarkdown(text: string): ReturnType<typeof schema.node> {
         continue;
       }
 
-      const trimmed = p.trim();
+      const normalizedBlock = p.replace(/[ \t]+$/gm, "");
+      const trimmed = normalizedBlock.trim();
       if (isTable(trimmed)) {
-        const { headers, rows } = parseGFMTable(trimmed);
-        blocks.push({ type: "table", content: trimmed, headers, rows });
+        const { headers, rows, separatorLine } = parseGFMTable(trimmed);
+        blocks.push({ type: "table", content: trimmed, headers, rows, separatorLine });
         continue;
       }
 
-      const list = parseList(trimmed);
+      const list = parseList(normalizedBlock);
       if (list) {
         blocks.push({
           type: list.type,
-          content: trimmed,
-          items: list.items,
-          order: list.type === "ordered_list" ? list.order : undefined,
+          content: normalizedBlock,
+          list,
         });
         continue;
       }
@@ -398,6 +516,22 @@ export function parseMarkdown(text: string): ReturnType<typeof schema.node> {
   }
 
   // Build ProseMirror nodes
+  const buildListNode = (list: ParsedList): ProseMirrorNode => {
+    const items = list.items.map((item) => {
+      const contentNodes: ProseMirrorNode[] = [
+        schema.nodes.paragraph.create(null, buildInlineContent(item.content)),
+      ];
+      for (const child of item.children) {
+        contentNodes.push(buildListNode(child));
+      }
+      return schema.nodes.list_item.create(null, contentNodes);
+    });
+    if (list.type === "ordered_list") {
+      return schema.nodes.ordered_list.create({ order: list.order ?? 1 }, items);
+    }
+    return schema.nodes.bullet_list.create(null, items);
+  };
+
   const docNodes = blocks.map((block) => {
     if (block.type === "paragraph") {
       return schema.nodes.paragraph.create(null, buildInlineContent(block.content));
@@ -405,23 +539,17 @@ export function parseMarkdown(text: string): ReturnType<typeof schema.node> {
       const level = block.level ?? 1;
       return schema.nodes.heading.create({ level }, buildInlineContent(block.content));
     } else if (block.type === "bullet_list" || block.type === "ordered_list") {
-      const items = block.items ?? [];
-      const listItems = items.map((item) =>
-        schema.nodes.list_item.create(
-          null,
-          schema.nodes.paragraph.create(null, buildInlineContent(item)),
-        ),
-      );
-      if (block.type === "ordered_list") {
-        return schema.nodes.ordered_list.create({ order: block.order ?? 1 }, listItems);
+      if (block.list) {
+        return buildListNode(block.list);
       }
-      return schema.nodes.bullet_list.create(null, listItems);
+      return schema.nodes.paragraph.create(null, buildInlineContent(block.content));
     } else if (block.type === "diagram") {
       return schema.nodes.diagram.create(null, block.content ? schema.text(block.content) : null);
     } else if (block.type === "table") {
       return schema.nodes.table.create({
         headers: block.headers || [],
         rows: block.rows || [],
+        separator: block.separatorLine ?? null,
       });
     } else {
       return schema.nodes.code_block.create(
@@ -575,6 +703,10 @@ export function serializeMarkdown(doc: ReturnType<typeof schema.node>): string {
         active = nextMarks;
         result += child.text;
       } else if (child.type.name === "hard_break") {
+        if (active.length > 0) {
+          closeMarks(active);
+          active = [];
+        }
         result += "\n";
       }
     });
@@ -586,6 +718,28 @@ export function serializeMarkdown(doc: ReturnType<typeof schema.node>): string {
     return result;
   };
 
+  const serializeList = (node: ReturnType<typeof schema.node>, indent: number): string[] => {
+    const lines: string[] = [];
+    const isOrdered = node.type.name === "ordered_list";
+    let order = node.attrs.order || 1;
+
+    node.forEach((item) => {
+      const paragraph = item.firstChild;
+      const line = paragraph ? serializeInline(paragraph) : "";
+      const prefix = isOrdered ? `${order}. ` : "- ";
+      lines.push(`${" ".repeat(indent)}${prefix}${line}`);
+      order += 1;
+
+      item.forEach((child) => {
+        if (child.type.name === "bullet_list" || child.type.name === "ordered_list") {
+          lines.push(...serializeList(child, indent + 2));
+        }
+      });
+    });
+
+    return lines;
+  };
+
   doc.forEach((node) => {
     if (node.type.name === "heading") {
       const level = Math.max(1, Math.min(6, node.attrs.level || 1));
@@ -594,21 +748,8 @@ export function serializeMarkdown(doc: ReturnType<typeof schema.node>): string {
     } else if (node.type.name === "paragraph") {
       parts.push(serializeInline(node));
       parts.push(""); // Empty line after paragraph
-    } else if (node.type.name === "bullet_list") {
-      node.forEach((item) => {
-        const paragraph = item.firstChild;
-        const line = paragraph ? serializeInline(paragraph) : "";
-        parts.push(`- ${line}`);
-      });
-      parts.push("");
-    } else if (node.type.name === "ordered_list") {
-      let order = node.attrs.order || 1;
-      node.forEach((item) => {
-        const paragraph = item.firstChild;
-        const line = paragraph ? serializeInline(paragraph) : "";
-        parts.push(`${order}. ${line}`);
-        order += 1;
-      });
+    } else if (node.type.name === "bullet_list" || node.type.name === "ordered_list") {
+      parts.push(...serializeList(node, 0));
       parts.push("");
     } else if (node.type.name === "code_block") {
       const lang = node.attrs.language || "";
@@ -624,7 +765,8 @@ export function serializeMarkdown(doc: ReturnType<typeof schema.node>): string {
     } else if (node.type.name === "table") {
       const headers = node.attrs.headers as string[];
       const rows = node.attrs.rows as string[][];
-      parts.push(serializeGFMTable(headers, rows));
+      const separatorLine = node.attrs.separator as string | null;
+      parts.push(serializeGFMTable(headers, rows, separatorLine));
       parts.push(""); // Empty line after table
     }
   });

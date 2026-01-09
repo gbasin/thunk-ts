@@ -1,4 +1,25 @@
 export const PLAN_FORMAT = `
+## Bacgkground and Context
+[Overview of the parts of the project relevant to the task and how they work, with bullets and references to code files as needed.]
+[Do not propose solutions here!]
+[This section ensures the agent has reviewed the project and the user can confirm their mutual understanding.]
+
+## Summary
+[2-3 sentence overview of the approach/solution described in the plan]
+
+## Diagrams (optional)
+
+When helpful, include ASCII diagrams to illustrate:
+- Architecture or component relationships
+- Data/control flow
+- State transitions
+
+\`\`\`
+┌─────────┐ ┌─────────┐ Client ────▶ Server └─────────┘ └─────────┘
+\`\`\`
+
+_(Delete this section if no diagrams are needed)_
+
 ## Clarifications
 
 ### Assumptions
@@ -23,25 +44,6 @@ _If revised: ~~old~~ → new_
 <!-- Add feedback for agents here. Delete this comment when adding notes. -->
 
 ---
-
-## Summary
-
-[2-3 sentence overview of the approach]
-
-## Diagrams (optional)
-
-When helpful, include ASCII diagrams to illustrate:
-- Architecture or component relationships
-- Data/control flow
-- State transitions
-
-\`\`\`
-┌─────────┐     ┌─────────┐
-│ Client  │────▶│ Server  │
-└─────────┘     └─────────┘
-\`\`\`
-
-_(Delete this section if no diagrams are needed)_
 
 ## Tasks
 
@@ -73,7 +75,7 @@ Create a plan for this task.
 3. **Surface ambiguities early:**
    - List assumptions you're making (so the user can correct them before you waste effort)
    - Ask questions where you genuinely need input to proceed well
-   - For EVERY question, include "My lean" — your best guess helps the user even if they're unsure
+   - For EVERY question, include "Agent recommends" — your best guess helps the user even if they're unsure
    - Think: what could derail this plan if I'm wrong about it?
 4. Write a detailed plan
 

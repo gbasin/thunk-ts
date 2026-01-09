@@ -163,6 +163,49 @@ Footer paragraph`;
 });
 
 describe("Markdown Blocks", () => {
+  test("parses diagram blocks separately from code blocks", () => {
+    const markdown = `\`\`\`
+┌─┐
+│x│
+└─┘
+\`\`\`
+
+\`\`\`ts
+const value = 1;
+\`\`\``;
+
+    const doc = parseMarkdown(markdown);
+    const nodes: string[] = [];
+    doc.forEach((node) => nodes.push(node.type.name));
+
+    expect(nodes).toContain("diagram");
+    expect(nodes).toContain("code_block");
+
+    const serialized = serializeMarkdown(doc);
+    expect(serialized).toContain("```ts");
+    expect(serialized).toContain("const value = 1;");
+  });
+
+  test("round-trips ordered lists with non-1 starts", () => {
+    const markdown = `3. Third
+4. Fourth`;
+
+    const doc = parseMarkdown(markdown);
+    const serialized = serializeMarkdown(doc);
+
+    expect(serialized).toBe(markdown);
+  });
+
+  test("preserves single newlines inside paragraphs", () => {
+    const markdown = `Line one
+Line two`;
+
+    const doc = parseMarkdown(markdown);
+    const serialized = serializeMarkdown(doc);
+
+    expect(serialized).toBe(markdown);
+  });
+
   test("parses headings and lists", () => {
     const markdown = `# Title
 
@@ -181,6 +224,32 @@ describe("Markdown Blocks", () => {
     expect(nodes).toContain("heading");
     expect(nodes).toContain("bullet_list");
     expect(nodes).toContain("ordered_list");
+  });
+
+  test("round-trips nested bullet lists with two-space indent", () => {
+    const markdown = `- Parent
+  - Child A
+  - Child B
+- Sibling`;
+
+    const doc = parseMarkdown(markdown);
+    const serialized = serializeMarkdown(doc);
+
+    expect(serialized).toBe(markdown);
+  });
+
+  test("round-trips nested task list structure", () => {
+    const markdown = `- [ ] **Task 1**: Add interview domain types
+  - **Files:** \`src/models.ts\` (modify), \`src/prompts.ts\` (modify)
+  - **Details:**
+    - Add \`Phase.Interview\` and \`Phase.SpecReview\`
+    - Create \`InterviewState\` interface
+  - **Dependencies:** none`;
+
+    const doc = parseMarkdown(markdown);
+    const serialized = serializeMarkdown(doc);
+
+    expect(serialized).toBe(markdown);
   });
 });
 

@@ -212,6 +212,81 @@ describe("pl4n-editor", () => {
     expect(baselineSet).toBe("new content");
   });
 
+  it("autosaves content and updates status", async () => {
+    const EditorClass = customElements.get("pl4n-editor") as {
+      new (): HTMLElement;
+    };
+    const element = new EditorClass() as HTMLElement & {
+      session: string;
+      token: string;
+      projectId: string;
+      readOnly?: boolean;
+      editor?: {
+        getValue: () => string;
+      };
+      autosaveContent?: string | null;
+      saveAutosave?: () => Promise<void>;
+      statusMessage?: string;
+    };
+
+    element.session = "s-auto-ok";
+    element.token = "t-auto-ok";
+    element.projectId = "p-auto-ok";
+    element.readOnly = false;
+    element.editor = { getValue: () => "autosave draft" };
+
+    originalFetch = (globalThis as unknown as Record<string, unknown>).fetch;
+    (globalThis as unknown as Record<string, unknown>).fetch = (async () => {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      } as FetchResponse;
+    }) as unknown as typeof fetch;
+
+    await (element as unknown as { saveAutosave: () => Promise<void> }).saveAutosave();
+
+    expect(element.autosaveContent).toBe("autosave draft");
+    expect(element.statusMessage?.trim()).toBe("Autosaved");
+  });
+
+  it("locks plan when save returns 423", async () => {
+    const EditorClass = customElements.get("pl4n-editor") as {
+      new (): HTMLElement;
+    };
+    const element = new EditorClass() as HTMLElement & {
+      session: string;
+      token: string;
+      projectId: string;
+      readOnly?: boolean;
+      editor?: {
+        getValue: () => string;
+      };
+      save?: () => Promise<void>;
+      statusMessage?: string;
+    };
+
+    element.session = "s-lock";
+    element.token = "t-lock";
+    element.projectId = "p-lock";
+    element.readOnly = false;
+    element.editor = { getValue: () => "content" };
+
+    originalFetch = (globalThis as unknown as Record<string, unknown>).fetch;
+    (globalThis as unknown as Record<string, unknown>).fetch = (async () => {
+      return {
+        ok: false,
+        status: 423,
+        json: async () => ({}),
+      } as FetchResponse;
+    }) as unknown as typeof fetch;
+
+    await (element as unknown as { save: () => Promise<void> }).save();
+
+    expect(element.readOnly).toBe(true);
+    expect(element.statusMessage?.trim()).toBe("Plan locked.");
+  });
+
   it("approves the plan successfully", async () => {
     const EditorClass = customElements.get("pl4n-editor") as {
       new (): HTMLElement;
@@ -685,6 +760,161 @@ describe("pl4n-editor", () => {
 
     expect(element.statusMessage?.trim()).toBe("Autosave discard failed");
     expect(element.showAutosaveBanner).toBe(true);
+  });
+
+  it("restores autosave content and clears banner", async () => {
+    const EditorClass = customElements.get("pl4n-editor") as {
+      new (): HTMLElement;
+    };
+    let valueSet = "";
+    const element = new EditorClass() as HTMLElement & {
+      session: string;
+      token: string;
+      projectId: string;
+      autosaveContent?: string | null;
+      showAutosaveBanner?: boolean;
+      snapshotContent?: string | null;
+      editor?: {
+        setValue: (value: string) => void;
+      };
+      restoreAutosave?: () => Promise<void>;
+      statusMessage?: string;
+    };
+
+    element.session = "s-restore";
+    element.token = "t-restore";
+    element.projectId = "p-restore";
+    element.showAutosaveBanner = true;
+    element.autosaveContent = "restore me";
+    element.snapshotContent = "snapshot";
+    element.editor = {
+      setValue: (value) => {
+        valueSet = value;
+      },
+    };
+
+    originalFetch = (globalThis as unknown as Record<string, unknown>).fetch;
+    (globalThis as unknown as Record<string, unknown>).fetch = (async () => {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      } as FetchResponse;
+    }) as unknown as typeof fetch;
+
+    await (element as unknown as { restoreAutosave: () => Promise<void> }).restoreAutosave();
+
+    expect(valueSet).toBe("restore me");
+    expect(element.showAutosaveBanner).toBe(false);
+    expect(element.autosaveContent).toBeNull();
+    expect(element.snapshotContent).toBe("snapshot");
+    expect(element.statusMessage?.trim()).toBe("Autosave restored");
+  });
+
+  it("clears autosave snapshot on discard success", async () => {
+    const EditorClass = customElements.get("pl4n-editor") as {
+      new (): HTMLElement;
+    };
+    const element = new EditorClass() as HTMLElement & {
+      session: string;
+      token: string;
+      projectId: string;
+      showAutosaveBanner?: boolean;
+      autosaveContent?: string | null;
+      snapshotContent?: string | null;
+      discardAutosave?: (options?: { clearSnapshot?: boolean }) => Promise<void>;
+      statusMessage?: string;
+    };
+
+    element.session = "s-discard";
+    element.token = "t-discard";
+    element.projectId = "p-discard";
+    element.showAutosaveBanner = true;
+    element.autosaveContent = "draft";
+    element.snapshotContent = "snapshot";
+
+    originalFetch = (globalThis as unknown as Record<string, unknown>).fetch;
+    (globalThis as unknown as Record<string, unknown>).fetch = (async () => {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      } as FetchResponse;
+    }) as unknown as typeof fetch;
+
+    await (
+      element as unknown as {
+        discardAutosave: (options?: { clearSnapshot?: boolean }) => Promise<void>;
+      }
+    ).discardAutosave({ clearSnapshot: true });
+
+    expect(element.showAutosaveBanner).toBe(false);
+    expect(element.autosaveContent).toBeNull();
+    expect(element.snapshotContent).toBeNull();
+    expect(element.statusMessage?.trim()).toBe("Autosave discarded");
+  });
+
+  it("closes changes diff on Escape", () => {
+    const EditorClass = customElements.get("pl4n-editor") as {
+      new (): HTMLElement;
+    };
+    const element = new EditorClass() as HTMLElement & {
+      showChangesDiff?: boolean;
+      handleKeyDown?: (event: KeyboardEvent) => void;
+    };
+
+    element.showChangesDiff = true;
+    (element as unknown as { handleKeyDown: (event: KeyboardEvent) => void }).handleKeyDown({
+      key: "Escape",
+    } as KeyboardEvent);
+
+    expect(element.showChangesDiff).toBe(false);
+  });
+
+  it("closes autosave diff on Escape", () => {
+    const EditorClass = customElements.get("pl4n-editor") as {
+      new (): HTMLElement;
+    };
+    const element = new EditorClass() as HTMLElement & {
+      showAutosaveDiff?: boolean;
+      handleKeyDown?: (event: KeyboardEvent) => void;
+    };
+
+    element.showAutosaveDiff = true;
+    (element as unknown as { handleKeyDown: (event: KeyboardEvent) => void }).handleKeyDown({
+      key: "Escape",
+    } as KeyboardEvent);
+
+    expect(element.showAutosaveDiff).toBe(false);
+  });
+
+  it("updates agent status display", () => {
+    const EditorClass = customElements.get("pl4n-editor") as {
+      new (): HTMLElement;
+    };
+    const element = new EditorClass() as HTMLElement & {
+      updateAgentStatusDisplay?: () => void;
+    };
+
+    const existingStatus = document.getElementById("agent-status");
+    existingStatus?.remove();
+    const statusEl = document.createElement("span");
+    statusEl.id = "agent-status";
+    document.body.appendChild(statusEl);
+
+    (element as unknown as { agents: Record<string, string> }).agents = {
+      alpha: "working",
+      beta: "done",
+      gamma: "error",
+      delta: "idle",
+    };
+
+    (element as unknown as { updateAgentStatusDisplay: () => void }).updateAgentStatusDisplay();
+
+    expect(statusEl.textContent).toContain("● alpha");
+    expect(statusEl.textContent).toContain("✓ beta");
+    expect(statusEl.textContent).toContain("✗ gamma");
+    expect(statusEl.textContent).toContain("○ delta");
   });
 
   it("toggles archive state via API", async () => {
