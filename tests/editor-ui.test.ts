@@ -387,6 +387,126 @@ describe("pl4n-editor", () => {
     expect(element.statusMessage?.trim()).toBe("Archive failed (500)");
   });
 
+  it("collapses long context diffs", () => {
+    const EditorClass = customElements.get("pl4n-editor") as {
+      new (): HTMLElement;
+    };
+    const element = new EditorClass() as HTMLElement & {
+      collapseDiffLines?: (
+        diff: Array<{ type: string; value: string }>,
+        context: number,
+      ) => unknown[];
+    };
+
+    const diff = [
+      {
+        type: "context",
+        value: "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n",
+      },
+      {
+        type: "add",
+        value: "k\n",
+      },
+    ];
+
+    const collapsed = (
+      element as unknown as {
+        collapseDiffLines: (
+          diff: Array<{ type: string; value: string }>,
+          context: number,
+        ) => Array<{
+          type: string;
+          count?: number;
+        }>;
+      }
+    ).collapseDiffLines(diff, 2);
+
+    expect(collapsed.some((part) => part.type === "collapsed")).toBe(true);
+  });
+
+  it("returns no diff lines when there are no changes", () => {
+    const EditorClass = customElements.get("pl4n-editor") as {
+      new (): HTMLElement;
+    };
+    const element = new EditorClass() as HTMLElement & {
+      collapseDiffLines?: (
+        diff: Array<{ type: string; value: string }>,
+        context: number,
+      ) => unknown[];
+    };
+
+    const diff = [
+      {
+        type: "context",
+        value: "a\nb\nc\n",
+      },
+    ];
+
+    const collapsed = (
+      element as unknown as {
+        collapseDiffLines: (
+          diff: Array<{ type: string; value: string }>,
+          context: number,
+        ) => unknown[];
+      }
+    ).collapseDiffLines(diff, 2);
+
+    expect(collapsed.length).toBe(0);
+  });
+
+  it("renders autosave and changes diff modals", () => {
+    const EditorClass = customElements.get("pl4n-editor") as {
+      new (): HTMLElement;
+    };
+    const element = new EditorClass() as HTMLElement & {
+      autosaveContent?: string | null;
+      lastLoadedContent?: string;
+      showAutosaveDiff?: boolean;
+      showChangesDiff?: boolean;
+      editor?: { getValue: () => string };
+      renderAutosaveDiffModal?: () => unknown;
+      renderChangesDiffModal?: () => unknown;
+    };
+
+    element.autosaveContent = "new";
+    element.lastLoadedContent = "old";
+    element.showAutosaveDiff = true;
+    element.showChangesDiff = true;
+    element.editor = { getValue: () => "changed" };
+
+    const autosaveModal = (
+      element as unknown as { renderAutosaveDiffModal: () => { strings: string[] } | null }
+    ).renderAutosaveDiffModal();
+    const changesModal = (
+      element as unknown as { renderChangesDiffModal: () => { strings: string[] } | null }
+    ).renderChangesDiffModal();
+
+    expect(autosaveModal?.strings.join("")).toContain("Autosave Diff");
+    expect(changesModal?.strings.join("")).toContain("Changes");
+  });
+
+  it("renders continue confirmation panel with summary", () => {
+    const EditorClass = customElements.get("pl4n-editor") as {
+      new (): HTMLElement;
+    };
+    const element = new EditorClass() as HTMLElement & {
+      showContinueConfirm?: boolean;
+      lastLoadedContent?: string;
+      editor?: { getValue: () => string };
+      renderContinueConfirmPanel?: () => unknown;
+    };
+
+    element.showContinueConfirm = true;
+    element.lastLoadedContent = "a\nb\n";
+    element.editor = { getValue: () => "a\nb\nc\n" };
+
+    const panel = (
+      element as unknown as { renderContinueConfirmPanel: () => { strings: string[] } | null }
+    ).renderContinueConfirmPanel();
+
+    expect(panel?.strings.join("")).toContain("Review changes");
+  });
+
   it("toggles archive state via API", async () => {
     const EditorClass = customElements.get("pl4n-editor") as {
       new (): HTMLElement;
