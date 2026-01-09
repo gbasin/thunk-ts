@@ -154,6 +154,9 @@ export async function startServer(opts?: Partial<ServerStart>): Promise<void> {
             }
             return await handlers.handleApprove(req, projectId, segments[4]);
           }
+          if (segments[3] === "diff" && segments.length === 5) {
+            return await handlers.handleDiff(req, projectId, segments[4]);
+          }
         }
 
         if (segments[1] === "activity" && segments.length === 2) {

@@ -99,6 +99,11 @@ class Pl4nEditor extends LitElement {
   private showContinueConfirm = false;
   private continueConfirmExpanded = false;
   private showChangesDiff = false;
+  private showCompareTurns = false;
+  private compareTurnsFrom = 1;
+  private compareTurnsTo = 1;
+  private compareTurnsDiff: string | null = null;
+  private compareTurnsLoading = false;
   private activity: ActivityEvent[] = [];
   private eventSource: EventSource | null = null;
   private agents: AgentStatusMap = {};
@@ -197,6 +202,11 @@ class Pl4nEditor extends LitElement {
 
     if (event.key === "Escape" && this.showChangesDiff) {
       this.closeChangesDiff();
+      return;
+    }
+
+    if (event.key === "Escape" && this.showCompareTurns) {
+      this.closeCompareTurns();
       return;
     }
 
@@ -348,6 +358,15 @@ class Pl4nEditor extends LitElement {
       this.dirty = false;
       this.statusMessage = data.readOnly ? "Read-only" : "Ready";
       this.requestUpdate();
+
+      // Auto-open compare turns modal if ?diff=1 is in URL
+      const url = new URL(window.location.href);
+      if (url.searchParams.get("diff") === "1" && this.turn >= 2) {
+        void this.openCompareTurns();
+        // Remove the param from URL to avoid re-opening on refresh
+        url.searchParams.delete("diff");
+        window.history.replaceState({}, "", url.toString());
+      }
     } catch {
       // Use test content for development/testing when API unavailable
       if (this.session === "test-session") {
@@ -481,9 +500,10 @@ Try editing this text to see the diff highlighting in action!`;
       return;
     }
 
-    const currentContent = this.editor.getValue();
-    // If no changes, approve instead of running another turn
-    if (currentContent === this.lastLoadedContent) {
+    // If no changes from snapshot, approve instead of running another turn
+    // Use snapshotContent (original AI output) as baseline, not lastLoadedContent
+    // (which updates on save and would incorrectly show "no changes" after saving)
+    if (!this.hasChanges()) {
       const confirmed = window.confirm(
         "No changes detected. This will approve the plan as final.\n\nApprove?",
       );
@@ -719,6 +739,51 @@ Try editing this text to see the diff highlighting in action!`;
     this.requestUpdate();
   }
 
+  private async openCompareTurns() {
+    if (this.turn < 2) {
+      return;
+    }
+    this.compareTurnsFrom = this.turn - 1;
+    this.compareTurnsTo = this.turn;
+    this.showCompareTurns = true;
+    this.requestUpdate();
+    await this.loadTurnDiff();
+  }
+
+  private closeCompareTurns() {
+    this.showCompareTurns = false;
+    this.compareTurnsDiff = null;
+    this.requestUpdate();
+  }
+
+  private async loadTurnDiff() {
+    this.compareTurnsLoading = true;
+    this.requestUpdate();
+    try {
+      const res = await fetch(
+        `/api/projects/${this.projectId}/diff/${this.session}?from=${this.compareTurnsFrom}&to=${this.compareTurnsTo}&t=${this.token}`,
+      );
+      const data = (await res.json()) as { diff: string };
+      this.compareTurnsDiff = data.diff;
+    } catch {
+      this.compareTurnsDiff = null;
+    }
+    this.compareTurnsLoading = false;
+    this.requestUpdate();
+  }
+
+  private async handleCompareTurnsFromChange(event: Event) {
+    const select = event.target as HTMLSelectElement;
+    this.compareTurnsFrom = Number.parseInt(select.value, 10);
+    await this.loadTurnDiff();
+  }
+
+  private async handleCompareTurnsToChange(event: Event) {
+    const select = event.target as HTMLSelectElement;
+    this.compareTurnsTo = Number.parseInt(select.value, 10);
+    await this.loadTurnDiff();
+  }
+
   private hasChanges(): boolean {
     if (!this.editor) {
       return false;
@@ -767,6 +832,81 @@ Try editing this text to see the diff highlighting in action!`;
         </div>
       </div>
     `;
+  }
+
+  private renderCompareTurnsModal() {
+    if (!this.showCompareTurns) {
+      return null;
+    }
+    const turnOptions = [];
+    for (let i = 1; i <= this.turn; i++) {
+      turnOptions.push(i);
+    }
+    return html`
+      <div class="modal-backdrop" @click=${() => this.closeCompareTurns()}>
+        <div class="modal modal-wide" @click=${(event: Event) => event.stopPropagation()}>
+          <div class="modal-header">
+            <h2>Compare Turns</h2>
+            <div class="compare-turns-selects">
+              <label>
+                From:
+                <select @change=${(e: Event) => this.handleCompareTurnsFromChange(e)}>
+                  ${turnOptions.map(
+                    (t) =>
+                      html`<option value=${t} ?selected=${t === this.compareTurnsFrom}>
+                        Turn ${t}
+                      </option>`,
+                  )}
+                </select>
+              </label>
+              <span class="compare-turns-arrow">→</span>
+              <label>
+                To:
+                <select @change=${(e: Event) => this.handleCompareTurnsToChange(e)}>
+                  ${turnOptions.map(
+                    (t) =>
+                      html`<option value=${t} ?selected=${t === this.compareTurnsTo}>
+                        Turn ${t}
+                      </option>`,
+                  )}
+                </select>
+              </label>
+            </div>
+            <button class="button secondary" @click=${() => this.closeCompareTurns()}>
+              Close
+            </button>
+          </div>
+          <div class="modal-content">
+            ${
+              this.compareTurnsLoading
+                ? html`<div class="diff-loading">Loading...</div>`
+                : this.compareTurnsDiff
+                  ? this.renderUnifiedDiff(this.compareTurnsDiff)
+                  : html`<div class="diff-no-changes">No diff available</div>`
+            }
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  private renderUnifiedDiff(diffText: string) {
+    const lines = diffText.split("\n");
+    const rendered: Array<unknown> = [];
+    for (const line of lines) {
+      let cls = "diff-line";
+      if (line.startsWith("+") && !line.startsWith("+++")) {
+        cls = "diff-line diff-add";
+      } else if (line.startsWith("-") && !line.startsWith("---")) {
+        cls = "diff-line diff-remove";
+      } else if (line.startsWith("@@")) {
+        cls = "diff-line diff-hunk";
+      } else if (line.startsWith("diff") || line.startsWith("index")) {
+        cls = "diff-line diff-header";
+      }
+      rendered.push(html`<div class=${cls}><span class="diff-line-text">${line}</span></div>`);
+    }
+    return rendered;
   }
 
   private renderDiffLine(content: unknown, cls: string, lineNumber: number | null) {
@@ -1106,6 +1246,14 @@ Try editing this text to see the diff highlighting in action!`;
                       >
                         Show Diff
                       </button>
+                      <button
+                        class="button secondary"
+                        ?disabled=${this.turn < 2 || this.continuing}
+                        title=${this.turn < 2 ? "Need 2+ turns to compare" : "Compare between turns"}
+                        @click=${() => this.openCompareTurns()}
+                      >
+                        Compare Turns
+                      </button>
                       <button class="button" ?disabled=${this.saving || !this.dirty || this.continuing} @click=${() => this.save()}>
                         Save
                       </button>
@@ -1124,6 +1272,7 @@ Try editing this text to see the diff highlighting in action!`;
       </div>
       ${this.renderAutosaveDiffModal()}
       ${this.renderChangesDiffModal()}
+      ${this.renderCompareTurnsModal()}
     `;
   }
 

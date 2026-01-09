@@ -282,6 +282,16 @@ export class ProjectRegistry extends EventEmitter {
     if (!action) {
       return;
     }
+    // Deduplicate: skip if we already have a recent event for this session with the same action
+    const isDuplicate = this.activity.some(
+      (existing) =>
+        existing.project_id === project.id &&
+        existing.session_id === sessionId &&
+        existing.action === action,
+    );
+    if (isDuplicate) {
+      return;
+    }
     const event: ActivityEvent = {
       id: crypto.randomUUID(),
       timestamp: this.now().toISOString(),

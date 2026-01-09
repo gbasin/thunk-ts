@@ -276,18 +276,28 @@ class Pl4nList extends LitElement {
                         <span>${updated}</span>
                       </span>
                       <span class="tui-card-meta-right">
+                        ${this.renderDiffButton(session)}
                         ${this.renderArchiveButton(session)}
                       </span>
                     </div>
                   `;
 
-                  return canEdit
-                    ? html`<a class="tui-card ${session.archived ? "archived" : ""}" href=${session.edit_path}>
-                        ${cardContent}
-                      </a>`
-                    : html`<div class="tui-card ${session.archived ? "archived" : ""} disabled">
-                        ${cardContent}
-                      </div>`;
+                  const cardClass = `tui-card ${session.archived ? "archived" : ""}${
+                    canEdit ? "" : " disabled"
+                  }`;
+
+                  return html`<div class=${cardClass}>
+                    ${
+                      canEdit
+                        ? html`<a
+                            class="tui-card-link"
+                            href=${session.edit_path}
+                            aria-label="Open session ${session.session_id}"
+                          ></a>`
+                        : null
+                    }
+                    ${cardContent}
+                  </div>`;
                 })
         }
       </div>
@@ -435,6 +445,22 @@ class Pl4nList extends LitElement {
       >
         ${busy ? "..." : label}
       </button>
+    `;
+  }
+
+  private renderDiffButton(session: SessionItem) {
+    if (session.turn < 2 || !session.edit_path) {
+      return null;
+    }
+    const diffPath = `${session.edit_path}${session.edit_path.includes("?") ? "&" : "?"}diff=1`;
+    return html`
+      <a
+        class="button secondary"
+        href=${diffPath}
+        @click=${(event: Event) => event.stopPropagation()}
+      >
+        Diff
+      </a>
     `;
   }
 

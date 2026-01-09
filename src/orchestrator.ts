@@ -368,28 +368,37 @@ export class TurnOrchestrator {
     return result;
   }
 
-  async getDiff(sessionId: string): Promise<string> {
+  async getDiff(sessionId: string, fromTurn?: number, toTurn?: number): Promise<string> {
     const state = await this.manager.loadSession(sessionId);
-    if (!state || state.turn < 2) {
+    if (!state) {
+      return "";
+    }
+
+    // Default to comparing previous turn with current turn
+    const from = fromTurn ?? state.turn - 1;
+    const to = toTurn ?? state.turn;
+
+    // Validate turn range
+    if (from < 1 || to < 1 || from >= to || to > state.turn) {
       return "";
     }
 
     const paths = this.manager.getPaths(sessionId);
-    const prevFile = paths.turnFile(state.turn - 1);
-    const currFile = paths.turnFile(state.turn);
+    const fromFile = paths.turnFile(from);
+    const toFile = paths.turnFile(to);
 
-    if (!(await fileExists(prevFile)) || !(await fileExists(currFile))) {
+    if (!(await fileExists(fromFile)) || !(await fileExists(toFile))) {
       return "";
     }
 
-    const prevContent = await fs.readFile(prevFile, "utf8");
-    const currContent = await fs.readFile(currFile, "utf8");
+    const fromContent = await fs.readFile(fromFile, "utf8");
+    const toContent = await fs.readFile(toFile, "utf8");
 
     return unifiedDiff({
-      fromFile: `turn-${String(state.turn - 1).padStart(3, "0")}.md`,
-      toFile: `turn-${String(state.turn).padStart(3, "0")}.md`,
-      original: prevContent,
-      edited: currContent,
+      fromFile: `turn-${String(from).padStart(3, "0")}.md`,
+      toFile: `turn-${String(to).padStart(3, "0")}.md`,
+      original: fromContent,
+      edited: toContent,
     });
   }
 }

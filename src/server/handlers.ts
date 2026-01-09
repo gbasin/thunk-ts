@@ -1,5 +1,6 @@
 import { promises as fs } from "fs";
 import path from "path";
+import { createTwoFilesPatch } from "diff";
 
 import { Phase } from "../models";
 import type { SessionManager } from "../session";
@@ -715,6 +716,69 @@ export function createHandlers(context: HandlerContext) {
         phase: session.phase,
         final_turn: session.turn,
         plan_path: planLink,
+      });
+    },
+
+    async handleDiff(req: Request, projectId: string, sessionId: string): Promise<Response> {
+      const project = requireProject(projectId);
+      if (!project) {
+        return projectNotFound(projectId);
+      }
+      const authError = await requireSessionAuth(req, sessionId, project.manager);
+      if (authError) {
+        return authError;
+      }
+
+      const session = await project.manager.loadSession(sessionId);
+      if (!session) {
+        return sessionNotFound();
+      }
+
+      const url = new URL(req.url);
+      const fromParam = url.searchParams.get("from");
+      const toParam = url.searchParams.get("to");
+
+      const fromTurn = fromParam ? Number.parseInt(fromParam, 10) : session.turn - 1;
+      const toTurn = toParam ? Number.parseInt(toParam, 10) : session.turn;
+
+      if (
+        !Number.isInteger(fromTurn) ||
+        !Number.isInteger(toTurn) ||
+        fromTurn < 1 ||
+        toTurn < 1 ||
+        fromTurn >= toTurn ||
+        toTurn > session.turn
+      ) {
+        return jsonResponse(400, { error: "Invalid turn range" });
+      }
+
+      const paths = project.manager.getPaths(sessionId);
+      const fromFile = paths.turnFile(fromTurn);
+      const toFile = paths.turnFile(toTurn);
+
+      let fromContent: string;
+      let toContent: string;
+      try {
+        fromContent = await fs.readFile(fromFile, "utf8");
+        toContent = await fs.readFile(toFile, "utf8");
+      } catch {
+        return jsonResponse(404, { error: "Turn files not found" });
+      }
+
+      const diff = createTwoFilesPatch(
+        `turn-${String(fromTurn).padStart(3, "0")}.md`,
+        `turn-${String(toTurn).padStart(3, "0")}.md`,
+        fromContent,
+        toContent,
+        "",
+        "",
+        { context: 3 },
+      ).trimEnd();
+
+      return jsonResponse(200, {
+        from_turn: fromTurn,
+        to_turn: toTurn,
+        diff,
       });
     },
 
