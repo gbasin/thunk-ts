@@ -144,7 +144,7 @@ body {
   color: var(--tui-bg);
 }
 
-.tui-filter-btn:hover {
+.tui-filter-btn:hover:not(.active) {
   background: var(--tui-highlight);
 }
 
