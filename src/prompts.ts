@@ -34,7 +34,7 @@ _If revised: ~~old~~ → new_
 
 **Q1: [Question]?**
 - Context: [Why this matters]
-- My lean: [Your best guess]
+- Agent recommends: [Your best guess]
 - **Answer:**
 
 ---
@@ -179,7 +179,7 @@ If the user deleted something, it stays deleted even if agents still mention it.
 - **Assumptions:** If user corrects one, use strikethrough: ~~old~~ → new
 - **Questions:** When answered, fill in the **Answer:** field
 - **New user questions:** If user asks something anywhere in the doc, add it as a new Q
-  in Clarifications with your "My lean" — don't leave raw questions scattered in the plan
+  in Clarifications with your "Agent recommends" — don't leave raw questions scattered in the plan
 `;
 
 function format(template: string, values: Record<string, string | number>): string {

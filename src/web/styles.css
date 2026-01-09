@@ -245,21 +245,17 @@ body {
 }
 
 .tui-card-dot {
-  display: none;
+  display: block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--tui-border);
+  flex-shrink: 0;
 }
 
 @media (max-width: 600px) {
   .tui-card-meta-left {
     gap: 0.5ch;
-  }
-
-  .tui-card-dot {
-    display: block;
-    width: 3px;
-    height: 3px;
-    border-radius: 50%;
-    background: var(--tui-border);
-    flex-shrink: 0;
   }
 }
 
