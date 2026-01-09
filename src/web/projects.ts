@@ -1,7 +1,7 @@
 import { LitElement, html } from "lit";
 import {
   type ActivityEvent,
-  formatActivity,
+  formatActionLabel,
   getTokenFromLocation,
   openActivityStream,
 } from "./notifications.js";
@@ -164,7 +164,9 @@ class Pl4nProjects extends LitElement {
               }
             >
               <span class="tui-activity-dot ${event.action}"></span>
-              <span>${formatActivity(event)}</span>
+              <span class="tui-activity-project">${event.project_name}</span>
+              <span class="tui-activity-session">${event.session_id}</span>
+              <span class="tui-activity-action ${event.action}">${formatActionLabel(event.action)}</span>
             </a>
           `,
         )}

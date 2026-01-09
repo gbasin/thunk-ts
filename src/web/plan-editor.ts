@@ -16,7 +16,7 @@ import { baseKeymap, toggleMark } from "prosemirror-commands";
 import { history, undo, redo, undoDepth, redoDepth } from "prosemirror-history";
 import { inputRules, textblockTypeInputRule, wrappingInputRule } from "prosemirror-inputrules";
 import { splitListItem, liftListItem, sinkListItem } from "prosemirror-schema-list";
-import { Node } from "prosemirror-model";
+import { Node, Mark, ResolvedPos } from "prosemirror-model";
 import * as Diff from "diff";
 import { parseMarkdown, serializeMarkdown, schema } from "./prosemirror-schema.js";
 
@@ -606,6 +606,137 @@ function listEditPlugin(): Plugin {
 
         // For multi-item lists or partial selections, let ProseMirror handle normally
         return false;
+      },
+    },
+  });
+}
+
+function getMarkDelimiter(mark: Mark): string | null {
+  switch (mark.type.name) {
+    case "strong":
+      return "**";
+    case "em":
+      return "*";
+    case "strike":
+      return "~~";
+    default:
+      return null;
+  }
+}
+
+function findMarkRange($pos: ResolvedPos, mark: Mark): { from: number; to: number } | null {
+  const parent = $pos.parent;
+  const start = $pos.start();
+
+  // Find all ranges of this mark in the parent
+  const ranges: Array<{ from: number; to: number }> = [];
+  let currentRange: { from: number; to: number } | null = null;
+
+  parent.forEach((node, nodeOffset) => {
+    const hasMark = mark.isInSet(node.marks);
+    const nodeStart = start + nodeOffset;
+    const nodeEnd = nodeStart + node.nodeSize;
+
+    if (hasMark) {
+      if (currentRange) {
+        currentRange.to = nodeEnd;
+      } else {
+        currentRange = { from: nodeStart, to: nodeEnd };
+      }
+    } else {
+      if (currentRange) {
+        ranges.push(currentRange);
+        currentRange = null;
+      }
+    }
+  });
+
+  if (currentRange) {
+    ranges.push(currentRange);
+  }
+
+  // Find the range containing the cursor
+  for (const range of ranges) {
+    if ($pos.pos >= range.from && $pos.pos <= range.to) {
+      return range;
+    }
+  }
+
+  return null;
+}
+
+function inlineMarkEditPlugin(): Plugin {
+  return new Plugin({
+    props: {
+      decorations(state) {
+        const { $from, empty } = state.selection;
+
+        // Only show delimiters when cursor is collapsed
+        if (!empty) {
+          return DecorationSet.empty;
+        }
+
+        // Must be in a textblock
+        if (!$from.parent.isTextblock) {
+          return DecorationSet.empty;
+        }
+
+        // Get marks at cursor position
+        const marks = $from.marks();
+        if (marks.length === 0) {
+          return DecorationSet.empty;
+        }
+
+        const decorations: Decoration[] = [];
+        const markOrder = ["strike", "strong", "em"];
+
+        // Sort marks by their nesting order (outermost first)
+        const sortedMarks = marks
+          .filter((m) => markOrder.includes(m.type.name))
+          .sort((a, b) => markOrder.indexOf(a.type.name) - markOrder.indexOf(b.type.name));
+
+        for (const mark of sortedMarks) {
+          const delimiter = getMarkDelimiter(mark);
+          if (!delimiter) continue;
+
+          // Find the extent of this mark
+          const range = findMarkRange($from, mark);
+          if (!range) continue;
+
+          // Add opening delimiter widget
+          decorations.push(
+            Decoration.widget(
+              range.from,
+              () => {
+                const span = document.createElement("span");
+                span.className = "pm-mark-delimiter";
+                span.textContent = delimiter;
+                span.setAttribute("aria-hidden", "true");
+                span.contentEditable = "false";
+                return span;
+              },
+              { side: -1, ignoreSelection: true },
+            ),
+          );
+
+          // Add closing delimiter widget
+          decorations.push(
+            Decoration.widget(
+              range.to,
+              () => {
+                const span = document.createElement("span");
+                span.className = "pm-mark-delimiter";
+                span.textContent = delimiter;
+                span.setAttribute("aria-hidden", "true");
+                span.contentEditable = "false";
+                return span;
+              },
+              { side: 1, ignoreSelection: true },
+            ),
+          );
+        }
+
+        return DecorationSet.create(state.doc, decorations);
       },
     },
   });
@@ -1238,6 +1369,7 @@ export class PlanEditor {
         keymap(baseKeymap),
         diffPlugin(),
         sectionFoldPlugin(),
+        inlineMarkEditPlugin(),
       ],
     });
 

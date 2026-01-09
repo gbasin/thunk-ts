@@ -2,7 +2,7 @@ import { LitElement, html } from "lit";
 import * as Diff from "diff";
 import { PlanEditor } from "./plan-editor.js";
 import { buildLineDiff, type LineChange } from "./diff-render.js";
-import { type ActivityEvent, formatActivity, openActivityStream } from "./notifications.js";
+import { type ActivityEvent, formatActionLabel, openActivityStream } from "./notifications.js";
 import { parseMarkdown, serializeMarkdown } from "./prosemirror-schema.js";
 
 function formatPhase(phase: string): string {
@@ -1186,7 +1186,9 @@ Try editing this text to see the diff highlighting in action!`;
               }
             >
               <span class="tui-activity-dot ${event.action}"></span>
-              <span>${formatActivity(event)}</span>
+              <span class="tui-activity-project">${event.project_name}</span>
+              <span class="tui-activity-session">${event.session_id}</span>
+              <span class="tui-activity-action ${event.action}">${formatActionLabel(event.action)}</span>
             </a>
           `,
         )}

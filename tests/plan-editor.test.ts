@@ -376,4 +376,147 @@ describe("PlanEditor", () => {
     editor.destroy();
     root.remove();
   });
+
+  it("shows ** delimiters for bold text when cursor inside", async () => {
+    const { PlanEditor } = await import("../src/web/plan-editor");
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const content = "some **bold** text";
+    const editor = new PlanEditor(root, { value: content, baseline: content });
+
+    const view = (editor as unknown as { view: any }).view;
+
+    // Find the bold text position (inside the strong mark)
+    let boldPos: number | null = null;
+    view.state.doc.descendants((node: any, pos: number) => {
+      if (node.isText && node.marks.some((m: any) => m.type.name === "strong")) {
+        boldPos = pos + 1; // cursor inside the text
+        return false;
+      }
+      return true;
+    });
+    expect(boldPos).not.toBeNull();
+
+    // Set cursor inside bold text
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, boldPos!)));
+
+    const delimiters = root.querySelectorAll(".pm-mark-delimiter");
+    expect(delimiters.length).toBe(2);
+    expect(delimiters[0]?.textContent).toBe("**");
+    expect(delimiters[1]?.textContent).toBe("**");
+
+    editor.destroy();
+    root.remove();
+  });
+
+  it("shows * delimiters for italic text when cursor inside", async () => {
+    const { PlanEditor } = await import("../src/web/plan-editor");
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const content = "some *italic* text";
+    const editor = new PlanEditor(root, { value: content, baseline: content });
+
+    const view = (editor as unknown as { view: any }).view;
+
+    // Find the italic text position
+    let italicPos: number | null = null;
+    view.state.doc.descendants((node: any, pos: number) => {
+      if (node.isText && node.marks.some((m: any) => m.type.name === "em")) {
+        italicPos = pos + 1;
+        return false;
+      }
+      return true;
+    });
+    expect(italicPos).not.toBeNull();
+
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, italicPos!)));
+
+    const delimiters = root.querySelectorAll(".pm-mark-delimiter");
+    expect(delimiters.length).toBe(2);
+    expect(delimiters[0]?.textContent).toBe("*");
+    expect(delimiters[1]?.textContent).toBe("*");
+
+    editor.destroy();
+    root.remove();
+  });
+
+  it("shows ~~ delimiters for strikethrough text when cursor inside", async () => {
+    const { PlanEditor } = await import("../src/web/plan-editor");
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const content = "some ~~strike~~ text";
+    const editor = new PlanEditor(root, { value: content, baseline: content });
+
+    const view = (editor as unknown as { view: any }).view;
+
+    // Find the strikethrough text position
+    let strikePos: number | null = null;
+    view.state.doc.descendants((node: any, pos: number) => {
+      if (node.isText && node.marks.some((m: any) => m.type.name === "strike")) {
+        strikePos = pos + 1;
+        return false;
+      }
+      return true;
+    });
+    expect(strikePos).not.toBeNull();
+
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, strikePos!)));
+
+    const delimiters = root.querySelectorAll(".pm-mark-delimiter");
+    expect(delimiters.length).toBe(2);
+    expect(delimiters[0]?.textContent).toBe("~~");
+    expect(delimiters[1]?.textContent).toBe("~~");
+
+    editor.destroy();
+    root.remove();
+  });
+
+  it("shows nested delimiters for bold+italic text", async () => {
+    const { PlanEditor } = await import("../src/web/plan-editor");
+    const { schema } = await import("../src/web/prosemirror-schema");
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    // Start with plain text, then programmatically add marks
+    const content = "some nested text";
+    const editor = new PlanEditor(root, { value: content, baseline: content });
+
+    const view = (editor as unknown as { view: any }).view;
+
+    // Apply both strong and em marks to "nested" (positions 6-12 in "some nested text")
+    const from = 6;
+    const to = 12;
+    let tr = view.state.tr;
+    tr = tr.addMark(from, to, schema.marks.strong.create());
+    tr = tr.addMark(from, to, schema.marks.em.create());
+    view.dispatch(tr);
+
+    // Set cursor inside the marked text
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from + 1)));
+
+    const delimiters = root.querySelectorAll(".pm-mark-delimiter");
+    // Should show 4 delimiters: ** and * on each side
+    expect(delimiters.length).toBe(4);
+
+    editor.destroy();
+    root.remove();
+  });
+
+  it("hides delimiters when cursor is outside marked text", async () => {
+    const { PlanEditor } = await import("../src/web/plan-editor");
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const content = "plain **bold** text";
+    const editor = new PlanEditor(root, { value: content, baseline: content });
+
+    const view = (editor as unknown as { view: any }).view;
+
+    // Set cursor at start of doc (before "plain")
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1)));
+
+    const delimiters = root.querySelectorAll(".pm-mark-delimiter");
+    expect(delimiters.length).toBe(0);
+
+    editor.destroy();
+    root.remove();
+  });
 });

@@ -12,14 +12,8 @@ export function getTokenFromLocation(): string | null {
   return new URLSearchParams(window.location.search).get("t");
 }
 
-export function formatActivity(event: ActivityEvent): string {
-  const action =
-    event.action === "review_needed"
-      ? "needs review"
-      : event.action === "approved"
-        ? "approved"
-        : "errored";
-  return `${event.project_name} · ${event.session_id} ${action}`;
+export function formatActionLabel(action: ActivityEvent["action"]): string {
+  return action === "review_needed" ? "review" : action === "approved" ? "approved" : "error";
 }
 
 export function openActivityStream(

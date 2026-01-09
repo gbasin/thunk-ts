@@ -369,6 +369,40 @@ body {
   background: var(--tui-error);
 }
 
+.tui-activity-project {
+  color: var(--tui-fg-dim);
+}
+
+.tui-activity-project::after {
+  content: "/";
+  margin: 0 0.3ch;
+  color: var(--tui-fg-dim);
+}
+
+.tui-activity-session {
+  font-weight: 500;
+}
+
+.tui-activity-action {
+  margin-left: auto;
+  padding: 0.1em 0.5em;
+  border-radius: 2px;
+  font-size: 0.85em;
+  background: var(--tui-bg-alt);
+}
+
+.tui-activity-action.review_needed {
+  color: var(--tui-accent);
+}
+
+.tui-activity-action.approved {
+  color: var(--tui-success);
+}
+
+.tui-activity-action.error {
+  color: var(--tui-error);
+}
+
 .tui-page .activity-bar {
   display: none;
 }
@@ -1128,6 +1162,15 @@ pl4n-list {
   display: inline-block;
   width: var(--md-prefix-width, 2ch);
   margin-left: calc(var(--md-prefix-width, 2ch) * -1);
+}
+
+.plan-editor .pm-mark-delimiter {
+  color: var(--muted);
+  font-weight: normal;
+  font-style: normal;
+  text-decoration: none;
+  user-select: none;
+  pointer-events: none;
 }
 
 .plan-editor h1 {

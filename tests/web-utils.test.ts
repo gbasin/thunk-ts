@@ -1,7 +1,11 @@
 import { describe, expect, it } from "bun:test";
 
 import { buildLineDiff } from "../src/web/diff-render";
-import { formatActivity, getTokenFromLocation, openActivityStream } from "../src/web/notifications";
+import {
+  formatActionLabel,
+  getTokenFromLocation,
+  openActivityStream,
+} from "../src/web/notifications";
 
 class EventSourceStub {
   url: string;
@@ -43,17 +47,10 @@ describe("diff-render", () => {
 });
 
 describe("notifications", () => {
-  it("formats activity strings", () => {
-    const text = formatActivity({
-      id: "1",
-      timestamp: "2025-01-01T00:00:00Z",
-      project_id: "proj",
-      project_name: "Project",
-      session_id: "alpha",
-      phase: "user_review",
-      action: "review_needed",
-    });
-    expect(text).toContain("Project · alpha needs review");
+  it("formats action labels", () => {
+    expect(formatActionLabel("review_needed")).toBe("review");
+    expect(formatActionLabel("approved")).toBe("approved");
+    expect(formatActionLabel("error")).toBe("error");
   });
 
   it("reads token from the location", () => {
